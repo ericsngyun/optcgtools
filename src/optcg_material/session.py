@@ -21,7 +21,13 @@ from .models import (
     validate_completeness,
 )
 from .provenance import load_manifest, save_manifest, verify_manifest_files
-from .quality import FrameQuality, QualityThresholds, evaluate_frame, read_image
+from .quality import (
+    FrameQuality,
+    QualityThresholds,
+    apply_group_exposure_gate,
+    evaluate_frame,
+    read_image,
+)
 
 
 class SessionError(RuntimeError):
@@ -93,22 +99,35 @@ def run_quality_preflight(
     thresholds: QualityThresholds | None = None,
 ) -> list[FrameQuality]:
     session = load_manifest(session_root)
+    limits = thresholds or QualityThresholds()
     reports: list[FrameQuality] = []
+    groups: dict[str, list[FrameQuality]] = {}
     diagnostics = session_root / "diagnostics" / "quality"
     diagnostics.mkdir(parents=True, exist_ok=True)
 
     for record in session.files:
         if not record.media_type.startswith("image/"):
             continue
-        report = evaluate_frame(session_root / record.path, thresholds)
+        report = evaluate_frame(session_root / record.path, limits)
         reports.append(report)
-        output = diagnostics / f"{Path(record.path).stem}.json"
+        groups.setdefault(record.kind.value, []).append(report)
+
+    sequence_diagnostics = apply_group_exposure_gate(
+        groups,
+        max_deviation=limits.max_group_luminance_deviation,
+        minimum_frames=limits.minimum_group_frames,
+    )
+
+    for report in reports:
+        output = diagnostics / f"{Path(report.path).stem}.json"
         output.write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
 
     summary = {
         "generated_at": datetime.now(UTC).isoformat(),
+        "thresholds": limits.model_dump(),
         "accepted": sum(report.accepted for report in reports),
         "rejected": sum(not report.accepted for report in reports),
+        "sequence_exposure": [item.model_dump() for item in sequence_diagnostics],
         "reports": [report.model_dump() for report in reports],
     }
     (diagnostics / "summary.json").write_text(
