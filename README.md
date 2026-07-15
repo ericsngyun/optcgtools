@@ -1,6 +1,6 @@
 # OPTCG Cards CSS — Holo Material Lab
 
-A Svelte/Vite research environment for building physically plausible One Piece Card Game holofoil effects for GenkiStuff.
+A Svelte/Vite research environment for building physically plausible One Piece Card Game holofoil effects, reviewable material profiles, and 3D card assets for GenkiStuff.
 
 This repository is a GPL-3.0 derivative lab based on Simon Goellner's [`pokemon-cards-css`](https://github.com/simeydotme/pokemon-cards-css). The original project can be fetched exactly at commit `acb1197633e749a1fba4412231db2f6581586d00`.
 
@@ -22,45 +22,83 @@ npm run fetch:upstream
 npm run check:source-pin
 ```
 
-## Why this exists
+## Architecture rule
 
-The upstream interaction architecture is broadly reusable, but its CSS profiles are tuned to Pokémon Sword & Shield card finishes. This project retains the pointer/spring/CSS-variable model and develops independent OPTCG material profiles for:
+The upstream interaction architecture is retained:
 
-- SP etched metallic cards;
-- SP rainbow-field cards;
-- alternate-art coated foil;
-- later: gold anniversary and manga-rare finishes.
+- normalized pointer/touch coordinates;
+- spring-smoothed 3D movement;
+- CSS custom properties as the interaction/material boundary;
+- stable layered card markup;
+- separate shine and glare behavior;
+- proxy-driven asset and finish resolution.
 
-## Structure
+OPTCG material extraction is intentionally more rigorous. `SP`, `manga`, `parallel`, `SR`, and `alt art` are not treated as sufficient material definitions. Authenticated physical captures are decomposed into reviewable foil, metallic, gloss, texture, suppression, normal, direction, and semantic-region channels.
 
-```text
-src/lib/components/CardProxy.svelte treatment metadata and asset normalization
-src/lib/components/HoloCard.svelte   pointer, spring, tilt, and CSS-variable engine
-public/css/cards/base.css            stable 3D card layer stack
-public/css/cards/one-piece-sp.css    SP material families
-public/css/cards/one-piece-alt-art.css
-public/img/demo/                      local demo face and card back
-public/img/masks/                     generic and card-specific masks
-docs/engineering-notes.md            upstream analysis and adaptation rationale
-docs/optcg-material-model.md         reference-capture and validation protocol
-scripts/fetch-upstream.sh             exact upstream checkout at the pinned commit
-```
+## Multi-channel card usage
 
-## Adding a real card
-
-Do not commit third-party marketplace photographs. Add a scan or licensed product image you are permitted to use, then create a card-specific grayscale mask with the same dimensions.
+The original single `mask` prop still works as a fallback. Production profiles should supply independent channels:
 
 ```svelte
 <HoloCard
-  image="/img/cards/op01-078-sp.webp"
-  mask="/img/masks/op01-078-sp-mask.webp"
-  finish="sp-etched"
+  image="/approved/cards/op01-120/albedo.webp"
+  foilMask="/approved/cards/op01-120/foil-mask.webp"
+  metallicMask="/approved/cards/op01-120/metallic-mask.webp"
+  glossMask="/approved/cards/op01-120/gloss-mask.webp"
+  textureMask="/approved/cards/op01-120/texture-mask.webp"
+  normalMap="/approved/cards/op01-120/normal-map.webp"
+  directionMap="/approved/cards/op01-120/direction-map.webp"
+  finish="manga-prismatic-panel"
 />
 ```
 
+The CSS renderer consumes the browser-compatible masks. Normal and direction maps are carried through the same profile contract for the WebGL/WebGPU and 3D renderers.
+
+## Frontier pipeline
+
+```text
+authenticated capture
+  -> provenance and quality gates
+  -> rectification and registration
+  -> semantic-region proposals
+  -> measured material maps
+  -> interpretable material fitting
+  -> human review
+  -> CSS / WebGL / GLB publication
+```
+
+Start with:
+
+- [`docs/architecture/README.md`](docs/architecture/README.md)
+- [`docs/architecture/frontier-material-pipeline.md`](docs/architecture/frontier-material-pipeline.md)
+- [`docs/research/reference-capture-protocol.md`](docs/research/reference-capture-protocol.md)
+- [`schemas/card-material-profile.schema.json`](schemas/card-material-profile.schema.json)
+- [`references/README.md`](references/README.md)
+
+## Implementation order
+
+The GitHub backlog is intentionally dependency-ordered:
+
+1. capture and provenance;
+2. deterministic registration;
+3. semantic regions;
+4. measured material maps;
+5. research renderer;
+6. analysis-by-synthesis fitting;
+7. review workspace;
+8. CSS compilation;
+9. 3D GLB assets;
+10. benchmark calibration and GenkiStuff integration.
+
+Do not begin large-scale card-specific shader tuning before capture and registration are working.
+
+## Rights boundary
+
+Do not commit third-party marketplace photographs or official card scans without permission. Raw GenkiStuff physical captures belong in approved private storage. Public code may contain synthetic fixtures, source URLs and observations, approved manifests, and legally approved derived assets.
+
 ## Material design rule
 
-The shader should match the physical printing process, not maximize visual spectacle. Keep clear-coat glare, foil diffraction, metallic substrate, and embossed texture independently tunable.
+Match the observed physical card, not maximum visual spectacle. Keep clearcoat glare, foil diffraction, metallic response, embossed texture, and ink suppression independently measurable and tunable.
 
 ## License
 
