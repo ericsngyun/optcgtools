@@ -96,9 +96,10 @@ class AuthenticationMetadata(StrictModel):
 
     @model_validator(mode="after")
     def verified_requires_evidence(self) -> AuthenticationMetadata:
-        if self.status is AuthenticationStatus.VERIFIED:
-            if not self.method or not self.verifier:
-                raise ValueError("verified authentication requires method and verifier")
+        if self.status is AuthenticationStatus.VERIFIED and (
+            not self.method or not self.verifier
+        ):
+            raise ValueError("verified authentication requires method and verifier")
         return self
 
 
