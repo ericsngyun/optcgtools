@@ -24,6 +24,7 @@
   let referenceName = "No matched reference loaded";
   let comparisonMode = "off";
   let referenceOpacity = 0.55;
+  let presentationMode = "rounded";
   let tiltXDeg = DEFAULT_RESEARCH_STATE.tiltXDeg;
   let tiltYDeg = DEFAULT_RESEARCH_STATE.tiltYDeg;
   let lightAzimuthDeg = DEFAULT_RESEARCH_STATE.lightAzimuthDeg;
@@ -32,6 +33,7 @@
   let exposure = DEFAULT_RESEARCH_STATE.exposure;
   let channels = { ...DEFAULT_RESEARCH_STATE.channels };
   let lastProfile = profile;
+  let automationApi;
 
   onMount(async () => {
     renderer = new ResearchCardRenderer(container, {
@@ -51,6 +53,8 @@
       await renderer.init();
       renderer.setState(currentState());
       lastProfile = profile;
+      syncPresentation();
+      installAutomationApi();
     } catch (value) {
       error = value.message;
       status = "error";
@@ -58,11 +62,15 @@
   });
 
   onDestroy(() => {
+    if (window.__OPTGC_RESEARCH__ === automationApi) delete window.__OPTGC_RESEARCH__;
     renderer?.dispose();
     if (referenceUrl) URL.revokeObjectURL(referenceUrl);
   });
 
-  $: if (renderer) renderer.setState(currentState());
+  $: if (renderer) {
+    renderer.setState(currentState());
+    syncPresentation();
+  }
 
   $: if (renderer && profile !== lastProfile) {
     lastProfile = profile;
@@ -79,6 +87,56 @@
       exposure: Number(exposure),
       channels: { ...channels }
     };
+  }
+
+  function applyExternalState(input = {}) {
+    if (input.tiltXDeg !== undefined) tiltXDeg = Number(input.tiltXDeg);
+    if (input.tiltYDeg !== undefined) tiltYDeg = Number(input.tiltYDeg);
+    if (input.lightAzimuthDeg !== undefined) lightAzimuthDeg = Number(input.lightAzimuthDeg);
+    if (input.lightElevationDeg !== undefined) lightElevationDeg = Number(input.lightElevationDeg);
+    if (input.lightDistance !== undefined) lightDistance = Number(input.lightDistance);
+    if (input.exposure !== undefined) exposure = Number(input.exposure);
+    if (input.channels) channels = { ...channels, ...input.channels };
+    if (input.presentationMode) presentationMode = input.presentationMode;
+    renderer.setState(currentState());
+    syncPresentation();
+    return renderer.snapshotState();
+  }
+
+  function syncPresentation() {
+    if (!renderer?.bodyMesh) return;
+    const rounded = presentationMode === "rounded";
+    renderer.bodyMesh.visible = rounded;
+    renderer.backMesh.visible = rounded;
+  }
+
+  function installAutomationApi() {
+    automationApi = Object.freeze({
+      version: 1,
+      async setProfile(input) {
+        const normalized = normalizeResearchProfile(input);
+        profile = normalized;
+        lastProfile = normalized;
+        await renderer.setProfile(normalized);
+        return renderer.snapshotState();
+      },
+      setState(input) {
+        return applyExternalState(input);
+      },
+      snapshot() {
+        return {
+          ...renderer.snapshotState(),
+          presentationMode,
+          status,
+          error
+        };
+      },
+      async render() {
+        await renderer.renderer.renderAsync(renderer.scene, renderer.camera);
+        return this.snapshot();
+      }
+    });
+    window.__OPTGC_RESEARCH__ = automationApi;
   }
 
   function setChannel(name, event) {
@@ -128,6 +186,7 @@
     lightElevationDeg = DEFAULT_RESEARCH_STATE.lightElevationDeg;
     lightDistance = DEFAULT_RESEARCH_STATE.lightDistance;
     exposure = DEFAULT_RESEARCH_STATE.exposure;
+    presentationMode = "rounded";
     restoreChannels();
     renderer?.controls?.reset();
   }
@@ -135,6 +194,7 @@
   function exportState() {
     const snapshot = {
       ...renderer.snapshotState(),
+      presentationMode,
       comparison: {
         referenceName,
         mode: comparisonMode,
@@ -207,6 +267,12 @@
     </div>
 
     <div class="research-control-block">
+      <div class="research-label"><span>Presentation</span><output>{presentationMode}</output></div>
+      <div class="research-segmented" aria-label="Presentation mode">
+        {#each ["flat", "rounded"] as mode}
+          <button class:active={presentationMode === mode} type="button" on:click={() => (presentationMode = mode)}>{mode}</button>
+        {/each}
+      </div>
       <div class="research-label"><span>Card X tilt</span><output>{Number(tiltXDeg).toFixed(1)}°</output></div>
       <input type="range" min="-30" max="30" step="0.25" bind:value={tiltXDeg} />
       <div class="research-label"><span>Card Y tilt</span><output>{Number(tiltYDeg).toFixed(1)}°</output></div>
