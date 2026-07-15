@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 718 1000">
+  <defs><radialGradient id="r"><stop stop-color="#4a3340"/><stop offset=".55" stop-color="#16131a"/><stop offset="1" stop-color="#07070a"/></radialGradient></defs>
+  <rect width="718" height="1000" rx="34" fill="url(#r)"/>
+  <rect x="24" y="24" width="670" height="952" rx="24" fill="none" stroke="#8b744d" stroke-width="8"/>
+  <circle cx="359" cy="500" r="175" fill="none" stroke="#8b744d" stroke-width="18"/>
+  <path d="M210 500h298M359 350v300" stroke="#8b744d" stroke-width="12" opacity=".7"/>
+  <text x="359" y="525" text-anchor="middle" fill="#d7c59c" font-family="system-ui" font-size="38" font-weight="700">HOLO LAB</text>
+</svg>
