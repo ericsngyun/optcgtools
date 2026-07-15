@@ -4,7 +4,17 @@
 
   export let image = "/img/demo/optcg-placeholder.svg";
   export let back = "/img/demo/card-back.svg";
+
+  // `mask` remains as a backwards-compatible fallback. Production profiles
+  // should provide independent material-channel masks.
   export let mask = "/img/masks/sp-generic-mask.svg";
+  export let foilMask = "";
+  export let metallicMask = "";
+  export let glossMask = "";
+  export let textureMask = "";
+  export let normalMap = "";
+  export let directionMap = "";
+
   export let finish = "sp-etched";
   export let label = "One Piece Card Game holofoil test card";
   export let masked = true;
@@ -26,6 +36,7 @@
   const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
   const map = (value, inMin, inMax, outMin, outMax) =>
     ((value - inMin) * (outMax - outMin)) / (inMax - inMin) + outMin;
+  const cssUrl = (value) => (value ? `url("${value}")` : "none");
 
   function applyInteraction(next) {
     rotation.set(next.rotation);
@@ -105,6 +116,11 @@
     1
   );
 
+  $: resolvedFoilMask = foilMask || mask;
+  $: resolvedMetallicMask = metallicMask || mask;
+  $: resolvedGlossMask = glossMask || mask;
+  $: resolvedTextureMask = textureMask || mask;
+
   $: dynamicStyles = `
     --pointer-x: ${$pointer.x}%;
     --pointer-y: ${$pointer.y}%;
@@ -117,7 +133,13 @@
     --glare-strength: ${glareStrength};
     --foil-strength: ${foilStrength};
     --texture-scale: ${textureScale};
-    --mask: url("${mask}");
+    --mask: ${cssUrl(mask)};
+    --foil-mask: ${cssUrl(resolvedFoilMask)};
+    --metallic-mask: ${cssUrl(resolvedMetallicMask)};
+    --gloss-mask: ${cssUrl(resolvedGlossMask)};
+    --texture-mask: ${cssUrl(resolvedTextureMask)};
+    --normal-map: ${cssUrl(normalMap)};
+    --direction-map: ${cssUrl(directionMap)};
   `;
 
   onMount(() => {
@@ -159,10 +181,10 @@
       <img class="card__back" src={back} alt="Generic card back" draggable="false" />
       <div class="card__front">
         <img class="card__image" src={image} alt={label} draggable="false" />
-        <div class="card__foil-base"></div>
-        <div class="card__shine"></div>
-        <div class="card__etch"></div>
-        <div class="card__glare"></div>
+        <div class="card__foil-base" aria-hidden="true"></div>
+        <div class="card__shine" aria-hidden="true"></div>
+        <div class="card__etch" aria-hidden="true"></div>
+        <div class="card__glare" aria-hidden="true"></div>
       </div>
     </button>
   </div>
