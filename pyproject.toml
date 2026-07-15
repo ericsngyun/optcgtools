@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "optcg-material-pipeline"
 version = "0.1.0"
-description = "Authenticated OPTCG physical-card capture ingestion, registration, and material-map tooling."
+description = "Authenticated OPTCG physical-card capture ingestion, registration, material extraction, and render fitting tooling."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "GPL-3.0-only" }
@@ -24,6 +24,7 @@ dependencies = [
 optcg-material = "optcg_material.cli:app"
 optcg-semantic = "optcg_material.semantic_cli:app"
 optcg-maps = "optcg_material.material_cli:app"
+optcg-fit = "optcg_material.fitting_cli:app"
 
 [dependency-groups]
 dev = [
