@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from optcg_material.semantic import (
     CorrectionOperation,
     MaskCorrection,
+    ModelProvenance,
     PromptBox,
     PromptPoint,
     RegionPrompt,
@@ -41,6 +42,17 @@ def test_prompt_digest_is_deterministic() -> None:
         points=[PromptPoint(x=200, y=300, foreground=True)],
     )
     assert canonical_digest(prompt) == canonical_digest(prompt.model_copy())
+
+
+def test_model_provenance_accepts_worker_config_alias() -> None:
+    provenance = ModelProvenance(
+        model_config="configs/sam2.1/sam2.1_hiera_b+.yaml",
+        checkpoint_path="/models/sam2.1_hiera_base_plus.pt",
+        checkpoint_blake3="a" * 64,
+        device="cuda",
+        torch_version="2.5.1",
+    )
+    assert provenance.config_path == "configs/sam2.1/sam2.1_hiera_b+.yaml"
 
 
 def test_uncertainty_is_highest_near_boundary() -> None:
