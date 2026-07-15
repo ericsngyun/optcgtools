@@ -10,7 +10,14 @@ from typing import Annotated, Any
 import cv2
 import numpy as np
 from blake3 import blake3
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 SAM2_REPOSITORY = "https://github.com/facebookresearch/sam2.git"
 SAM2_PINNED_COMMIT = "2b90b9f5ceec907a1c18123530e92e794ad901a4"
@@ -55,7 +62,11 @@ class CorrectionOperation(StrEnum):
 
 
 class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        validate_assignment=True,
+        populate_by_name=True,
+    )
 
 
 class PromptPoint(StrictModel):
@@ -153,7 +164,9 @@ class ModelProvenance(StrictModel):
     backend: str = "sam2.1"
     repository: str = SAM2_REPOSITORY
     repository_commit: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")] = SAM2_PINNED_COMMIT
-    config_path: str
+    config_path: str = Field(
+        validation_alias=AliasChoices("config_path", "model_config")
+    )
     checkpoint_path: str
     checkpoint_blake3: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     device: str
