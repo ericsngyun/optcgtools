@@ -1,4 +1,0 @@
-[submodule "upstream/pokemon-cards-css"]
-	path = upstream/pokemon-cards-css
-	url = https://github.com/simeydotme/pokemon-cards-css.git
-	branch = main
