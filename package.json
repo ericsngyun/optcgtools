@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:web": "playwright test",
+    "render:sequence": "node scripts/render-sequence.mjs",
     "fetch:upstream": "bash scripts/fetch-upstream.sh",
     "check:source-pin": "node scripts/check-source-pin.mjs"
   },
