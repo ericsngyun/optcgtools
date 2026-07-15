@@ -1,0 +1,18 @@
+{
+  "name": "optcg-cards-css",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A Svelte/Vite material lab for physically plausible One Piece Card Game holofoil effects, derived from pokemon-cards-css.",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check:source-pin": "node scripts/check-source-pin.mjs"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^1.1.0",
+    "svelte": "^3.52.0",
+    "vite": "^3.2.0"
+  }
+}
