@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
+import pytest
 
 from optcg_material.geometry import (
     CANONICAL_HEIGHT,
     CANONICAL_WIDTH,
+    GeometryError,
     detect_card_quad,
     register_residual,
     warp_card,
@@ -56,6 +58,19 @@ def test_detect_and_rectify_card() -> None:
     assert candidate.score > 0.56
     assert rectified.shape[:2] == (CANONICAL_HEIGHT, CANONICAL_WIDTH)
     assert float(rectified.mean()) > 50
+
+
+def test_blank_scene_is_rejected() -> None:
+    blank = np.full((1800, 1400, 3), 96, dtype=np.uint8)
+    with pytest.raises(GeometryError):
+        detect_card_quad(blank)
+
+
+def test_severely_occluded_card_is_rejected() -> None:
+    scene = perspective_scene()
+    cv2.rectangle(scene, (0, 0), (1250, 2400), (25, 25, 25), -1)
+    with pytest.raises(GeometryError):
+        detect_card_quad(scene)
 
 
 def test_residual_registration_reduces_alignment_error() -> None:
