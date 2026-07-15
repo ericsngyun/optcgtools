@@ -4,6 +4,12 @@
   export let cardId = "";
   export let image = "";
   export let mask = "";
+  export let foilMask = "";
+  export let metallicMask = "";
+  export let glossMask = "";
+  export let textureMask = "";
+  export let normalMap = "";
+  export let directionMap = "";
   export let back = "/img/demo/card-back.svg";
   export let treatment = "sp-etched";
   export let label = "One Piece Card Game card";
@@ -30,6 +36,12 @@
 <HoloCard
   image={resolvedImage}
   mask={resolvedMask}
+  {foilMask}
+  {metallicMask}
+  {glossMask}
+  {textureMask}
+  {normalMap}
+  {directionMap}
   {back}
   {finish}
   label={resolvedLabel}
