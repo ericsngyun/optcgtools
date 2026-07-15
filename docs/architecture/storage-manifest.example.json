@@ -1,0 +1,24 @@
+{
+  "captureSession": "2026-07-15-example",
+  "cardId": "OP01-120",
+  "printVariant": "JP-unverified",
+  "authentication": {
+    "status": "pending",
+    "method": "",
+    "custodian": ""
+  },
+  "rights": {
+    "owner": "GenkiStuff",
+    "allowedUses": ["internal-analysis"],
+    "publicDistribution": false
+  },
+  "capture": {
+    "camera": "",
+    "lens": "",
+    "whiteBalanceKelvin": 0,
+    "colorTarget": "",
+    "cardWidthMm": 0,
+    "cardHeightMm": 0
+  },
+  "objects": []
+}
