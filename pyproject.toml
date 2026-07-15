@@ -23,6 +23,7 @@ dependencies = [
 [project.scripts]
 optcg-material = "optcg_material.cli:app"
 optcg-semantic = "optcg_material.semantic_cli:app"
+optcg-maps = "optcg_material.material_cli:app"
 
 [dependency-groups]
 dev = [
