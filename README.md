@@ -1,26 +1,85 @@
 # OPTCG Cards CSS — Holo Material Lab
 
-A Svelte/Vite research environment for building physically plausible One Piece Card Game holofoil effects, reviewable material profiles, and 3D card assets for GenkiStuff.
+A Svelte/Vite research environment and Python computer-vision pipeline for building physically plausible One Piece Card Game holofoil effects, reviewable material profiles, and 3D card assets for GenkiStuff.
 
 This repository is a GPL-3.0 derivative lab based on Simon Goellner's [`pokemon-cards-css`](https://github.com/simeydotme/pokemon-cards-css). The original project can be fetched exactly at commit `acb1197633e749a1fba4412231db2f6581586d00`.
 
-## Clone and run
+## Clone
 
 ```bash
 git clone --branch holo-lab https://github.com/ericsngyun/optcgtools.git optcg-cards-css
 cd optcg-cards-css
+```
+
+## Run the web holo lab
+
+```bash
 npm install
 npm run dev
 ```
 
 The runtime is self-contained: its placeholder card, card back, and generic SP mask are committed under `public/img/`.
 
-To download the pinned upstream source used for the engineering reference:
+To download the exact upstream source used for the engineering reference:
 
 ```bash
 npm run fetch:upstream
 npm run check:source-pin
 ```
+
+## Run the authenticated-capture pipeline
+
+Install [`uv`](https://docs.astral.sh/uv/) and use Python 3.12:
+
+```bash
+uv sync --group dev
+uv run optcg-material --help
+```
+
+Initialize a private capture session:
+
+```bash
+uv run optcg-material init ./private-references/op01-120-shanks-en-001 \
+  --session-id op01-120-shanks-en-001 \
+  --card-id OP01-120 \
+  --card-name Shanks \
+  --set-code OP01 \
+  --language EN \
+  --operator "GenkiStuff Lab" \
+  --rights-owner GenkiStuff
+```
+
+Add authenticated physical captures. Every file is copied into the session, assigned a BLAKE3 content hash, and written to the immutable manifest:
+
+```bash
+uv run optcg-material add ./private-references/op01-120-shanks-en-001 ./captures/albedo.png --kind albedo
+uv run optcg-material add ./private-references/op01-120-shanks-en-001 ./captures/tilt-x-minus-30.png --kind tilt-x --angle -30
+uv run optcg-material add ./private-references/op01-120-shanks-en-001 ./captures/rake-left.png --kind rake --direction left
+```
+
+Record human authentication and rights separately from model output:
+
+```bash
+uv run optcg-material verify-auth ./private-references/op01-120-shanks-en-001 \
+  --method "authenticated inventory intake and physical inspection" \
+  --verifier "GenkiStuff reviewer"
+
+uv run optcg-material set-rights ./private-references/op01-120-shanks-en-001 \
+  --status owned-capture \
+  --public-derivatives-allowed \
+  --no-public-albedo-allowed
+```
+
+Validate, preflight, rectify, and register:
+
+```bash
+uv run optcg-material validate ./private-references/op01-120-shanks-en-001
+uv run optcg-material quality ./private-references/op01-120-shanks-en-001
+uv run optcg-material rectify ./private-references/op01-120-shanks-en-001
+uv run optcg-material register ./private-references/op01-120-shanks-en-001
+```
+
+Automatic card-boundary detection fails closed. Ambiguous frames require a reviewed `--manual-quads` JSON file instead of silently accepting a weak homography.
 
 ## Architecture rule
 
@@ -72,6 +131,7 @@ Start with:
 - [`docs/architecture/README.md`](docs/architecture/README.md)
 - [`docs/architecture/frontier-material-pipeline.md`](docs/architecture/frontier-material-pipeline.md)
 - [`docs/research/reference-capture-protocol.md`](docs/research/reference-capture-protocol.md)
+- [`schemas/capture-session.schema.json`](schemas/capture-session.schema.json)
 - [`schemas/card-material-profile.schema.json`](schemas/card-material-profile.schema.json)
 - [`references/README.md`](references/README.md)
 
