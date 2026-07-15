@@ -1,0 +1,131 @@
+/*
+  ONE PIECE SP MATERIAL PROFILES
+
+  This deliberately separates four physical cues:
+  1. metallic substrate response
+  2. directional diffraction / rainbow travel
+  3. printed or embossed micro-texture
+  4. clear-coat glare
+*/
+
+.card[data-tcg="one-piece"][data-finish^="sp-"] {
+  --sp-gold: 43 88% 70%;
+  --sp-cyan: 188 92% 72%;
+  --sp-magenta: 313 84% 73%;
+  --sp-violet: 262 90% 72%;
+}
+
+.card[data-tcg="one-piece"][data-finish^="sp-"] .card__foil-base {
+  opacity: calc(var(--card-opacity) * var(--foil-strength) * 0.62);
+  background-image:
+    radial-gradient(
+      farthest-corner circle at var(--pointer-x) var(--pointer-y),
+      hsla(0, 0%, 100%, 0.85) 0%,
+      hsla(48, 90%, 75%, 0.34) 16%,
+      hsla(210, 35%, 30%, 0.15) 43%,
+      hsla(0, 0%, 0%, 0.48) 100%
+    ),
+    linear-gradient(125deg, #161616 0%, #d6d2c7 22%, #353535 43%, #eee9da 64%, #171717 100%);
+  background-blend-mode: color-dodge, soft-light;
+  background-position: var(--background-x) var(--background-y), center;
+  background-size: 150% 150%, 220% 220%;
+  mix-blend-mode: color-dodge;
+  filter: contrast(1.12) saturate(0.68) brightness(0.92);
+}
+
+.card[data-tcg="one-piece"][data-finish="sp-etched"] .card__shine {
+  --band: calc(8% * var(--texture-scale));
+  opacity: calc(var(--card-opacity) * var(--foil-strength) * 0.78);
+  background-image:
+    repeating-linear-gradient(
+      117deg,
+      hsla(var(--sp-gold) / 0.1) 0%,
+      hsla(var(--sp-cyan) / 0.66) calc(var(--band) * 0.48),
+      hsla(var(--sp-violet) / 0.34) calc(var(--band) * 0.82),
+      hsla(var(--sp-magenta) / 0.62) var(--band),
+      hsla(var(--sp-gold) / 0.08) calc(var(--band) * 1.44)
+    ),
+    radial-gradient(
+      farthest-corner circle at var(--pointer-x) var(--pointer-y),
+      hsla(0, 0%, 100%, 0.9) 0%,
+      hsla(198, 96%, 75%, 0.42) 18%,
+      hsla(290, 92%, 68%, 0.12) 39%,
+      transparent 72%
+    );
+  background-size: 240% 240%, 145% 145%;
+  background-position:
+    calc(var(--background-x) * 1.35) calc(var(--background-y) * 1.2),
+    var(--pointer-x) var(--pointer-y);
+  background-blend-mode: hard-light, screen;
+  mix-blend-mode: color-dodge;
+  filter: saturate(1.12) contrast(1.48) brightness(0.8);
+}
+
+.card[data-tcg="one-piece"][data-finish="sp-etched"] .card__etch {
+  opacity: calc(var(--card-opacity) * var(--foil-strength) * 0.36);
+  background-image:
+    repeating-linear-gradient(
+      38deg,
+      rgba(255, 255, 255, 0.18) 0,
+      rgba(255, 255, 255, 0.18) 0.45px,
+      rgba(0, 0, 0, 0.09) 0.8px,
+      rgba(0, 0, 0, 0.09) 1.35px,
+      transparent 1.7px,
+      transparent 3.1px
+    ),
+    repeating-radial-gradient(
+      circle at 35% 38%,
+      rgba(255, 255, 255, 0.08) 0 0.7px,
+      rgba(0, 0, 0, 0.08) 0.9px 1.2px,
+      transparent 1.4px 4.2px
+    );
+  background-size:
+    calc(6px * var(--texture-scale)) calc(6px * var(--texture-scale)),
+    calc(18px * var(--texture-scale)) calc(18px * var(--texture-scale));
+  background-position:
+    calc(var(--background-x) * -0.18) calc(var(--background-y) * -0.18),
+    var(--background-x) var(--background-y);
+  mix-blend-mode: overlay;
+  filter: contrast(1.8);
+}
+
+.card[data-tcg="one-piece"][data-finish="sp-rainbow"] .card__shine {
+  opacity: calc(var(--card-opacity) * var(--foil-strength) * 0.86);
+  background-image:
+    conic-gradient(
+      from 210deg at var(--pointer-x) var(--pointer-y),
+      hsla(var(--sp-gold) / 0.12),
+      hsla(var(--sp-cyan) / 0.72),
+      hsla(var(--sp-violet) / 0.5),
+      hsla(var(--sp-magenta) / 0.72),
+      hsla(var(--sp-gold) / 0.2)
+    ),
+    repeating-linear-gradient(
+      130deg,
+      rgba(255, 255, 255, 0.15) 0 1px,
+      rgba(0, 0, 0, 0.08) 1px 2px,
+      transparent 2px 7px
+    );
+  background-size: 175% 175%, calc(12px * var(--texture-scale)) calc(12px * var(--texture-scale));
+  background-position: var(--background-x) var(--background-y), var(--background-x) var(--background-y);
+  background-blend-mode: screen, overlay;
+  mix-blend-mode: color-dodge;
+  filter: saturate(1.5) contrast(1.2) brightness(0.75);
+}
+
+.card[data-tcg="one-piece"][data-finish^="sp-"] .card__glare {
+  opacity: calc(var(--card-opacity) * var(--glare-strength) * 0.72);
+  background-image:
+    radial-gradient(
+      farthest-corner circle at var(--pointer-x) var(--pointer-y),
+      rgba(255, 255, 255, 0.88) 0%,
+      rgba(255, 255, 255, 0.44) 12%,
+      rgba(220, 235, 255, 0.14) 27%,
+      rgba(0, 0, 0, 0.1) 52%,
+      rgba(0, 0, 0, 0.54) 112%
+    );
+  background-size: 145% 145%;
+  background-position: center;
+  mix-blend-mode: soft-light;
+  filter: brightness(calc(0.9 + var(--pointer-from-center) * 0.3)) contrast(1.08);
+}
