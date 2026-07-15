@@ -1,0 +1,51 @@
+.reference-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  transform: translateZ(0);
+}
+
+.reference-overlay.difference {
+  mix-blend-mode: difference;
+  filter: saturate(0.45) contrast(1.12);
+}
+
+.research-status,
+.research-error {
+  z-index: 3;
+}
+
+.research-segmented {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  margin: 13px 0 16px;
+  background: #302d33;
+  border: 1px solid #302d33;
+}
+
+.research-segmented button {
+  border: 0;
+  background: #121116;
+  color: #77727c;
+  padding: 8px 7px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  cursor: pointer;
+}
+
+.research-segmented button:hover:not(:disabled),
+.research-segmented button.active {
+  background: #222027;
+  color: #f2ede5;
+}
+
+.research-segmented button:disabled {
+  cursor: not-allowed;
+  opacity: .35;
+}
