@@ -2,7 +2,25 @@
 
 A Svelte/Vite research environment for building physically plausible One Piece Card Game holofoil effects for GenkiStuff.
 
-This repository is a GPL-3.0 derivative lab based on Simon Goellner's [`pokemon-cards-css`](https://github.com/simeydotme/pokemon-cards-css). The original project is preserved as a git submodule pinned to commit `acb1197633e749a1fba4412231db2f6581586d00`.
+This repository is a GPL-3.0 derivative lab based on Simon Goellner's [`pokemon-cards-css`](https://github.com/simeydotme/pokemon-cards-css). The original project can be fetched exactly at commit `acb1197633e749a1fba4412231db2f6581586d00`.
+
+## Clone and run
+
+```bash
+git clone --branch holo-lab https://github.com/ericsngyun/optcgtools.git optcg-cards-css
+cd optcg-cards-css
+npm install
+npm run dev
+```
+
+The runtime is self-contained: its placeholder card, card back, and generic SP mask are committed under `public/img/`.
+
+To download the pinned upstream source used for the engineering reference:
+
+```bash
+npm run fetch:upstream
+npm run check:source-pin
+```
 
 ## Why this exists
 
@@ -13,21 +31,6 @@ The upstream interaction architecture is broadly reusable, but its CSS profiles 
 - alternate-art coated foil;
 - later: gold anniversary and manga-rare finishes.
 
-## Run
-
-```bash
-npm install
-npm run dev
-```
-
-Then open the local Vite URL, upload a card scan, and optionally upload a grayscale foil mask.
-
-## Initialize the pinned upstream source
-
-```bash
-git submodule update --init --recursive
-```
-
 ## Structure
 
 ```text
@@ -36,10 +39,11 @@ src/lib/components/HoloCard.svelte   pointer, spring, tilt, and CSS-variable eng
 public/css/cards/base.css            stable 3D card layer stack
 public/css/cards/one-piece-sp.css    SP material families
 public/css/cards/one-piece-alt-art.css
+public/img/demo/                      local demo face and card back
 public/img/masks/                     generic and card-specific masks
 docs/engineering-notes.md            upstream analysis and adaptation rationale
 docs/optcg-material-model.md         reference-capture and validation protocol
-upstream/pokemon-cards-css/           pinned original project submodule
+scripts/fetch-upstream.sh             exact upstream checkout at the pinned commit
 ```
 
 ## Adding a real card
