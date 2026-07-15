@@ -153,7 +153,7 @@ class ModelProvenance(StrictModel):
     backend: str = "sam2.1"
     repository: str = SAM2_REPOSITORY
     repository_commit: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")] = SAM2_PINNED_COMMIT
-    model_config: str
+    config_path: str
     checkpoint_path: str
     checkpoint_blake3: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     device: str
@@ -163,7 +163,7 @@ class ModelProvenance(StrictModel):
     offload_video_to_cpu: bool = True
     offload_state_to_cpu: bool = False
 
-    @field_validator("model_config", "checkpoint_path")
+    @field_validator("config_path", "checkpoint_path")
     @classmethod
     def validate_model_paths(cls, value: str) -> str:
         return safe_relative_or_local_path(value)
@@ -283,7 +283,7 @@ def uncertainty_from_logits(logits: np.ndarray) -> np.ndarray:
 
 def write_mask(path: Path, mask: np.ndarray) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    encoded_mask = (mask.astype(bool).astype(np.uint8) * 255)
+    encoded_mask = mask.astype(bool).astype(np.uint8) * 255
     success, encoded = cv2.imencode(".png", encoded_mask)
     if not success:
         raise SemanticError(f"unable to encode mask: {path}")
