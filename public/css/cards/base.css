@@ -86,15 +86,41 @@
 .card__etch { z-index: 4; }
 .card__glare { z-index: 5; }
 
+/*
+  The original pokemon-cards-css architecture used a single mask for the
+  material stack. OPTCG profiles can now route each physical response through
+  an independent mask while still falling back to the legacy `--mask` value.
+*/
 .card.masked .card__foil-base,
 .card.masked .card__shine,
-.card.masked .card__etch {
-  -webkit-mask-image: var(--mask);
-  mask-image: var(--mask);
+.card.masked .card__etch,
+.card.masked .card__glare {
   -webkit-mask-size: cover;
   mask-size: cover;
   -webkit-mask-position: center;
   mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.card.masked .card__foil-base {
+  -webkit-mask-image: var(--metallic-mask, var(--mask));
+  mask-image: var(--metallic-mask, var(--mask));
+}
+
+.card.masked .card__shine {
+  -webkit-mask-image: var(--foil-mask, var(--mask));
+  mask-image: var(--foil-mask, var(--mask));
+}
+
+.card.masked .card__etch {
+  -webkit-mask-image: var(--texture-mask, var(--mask));
+  mask-image: var(--texture-mask, var(--mask));
+}
+
+.card.masked .card__glare {
+  -webkit-mask-image: var(--gloss-mask, var(--mask));
+  mask-image: var(--gloss-mask, var(--mask));
 }
 
 @media (prefers-reduced-motion: reduce) {
