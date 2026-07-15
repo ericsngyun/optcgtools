@@ -34,7 +34,24 @@ jobs:
         run: uv sync --group dev
 
       - name: Lint
-        run: uv run ruff check src tests
+        id: lint
+        continue-on-error: true
+        run: uv run ruff check src tests --output-format=json > ruff-report.json
+
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ruff-report-${{ github.run_id }}
+          path: ruff-report.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce lint result
+        if: steps.lint.outcome == 'failure'
+        run: |
+          uv run ruff check src tests
+          exit 1
 
       - name: Compile
         run: uv run python -m compileall -q src tests
