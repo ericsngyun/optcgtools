@@ -18,10 +18,12 @@ class QualityThresholds(BaseModel):
     min_mean_luminance: float = Field(default=0.08, ge=0, le=1)
     max_mean_luminance: float = Field(default=0.92, ge=0, le=1)
     max_channel_clip_ratio: float = Field(default=0.06, ge=0, le=1)
+    max_group_luminance_deviation: float = Field(default=0.08, ge=0, le=1)
+    minimum_group_frames: int = Field(default=3, ge=2)
 
 
 class FrameQuality(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     path: str
     decodable: bool
@@ -34,6 +36,19 @@ class FrameQuality(BaseModel):
     channel_clip_ratio: float | None = None
     accepted: bool
     reasons: list[str] = Field(default_factory=list)
+
+
+class SequenceExposureDiagnostic(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    group: str
+    frame_count: int = Field(ge=0)
+    evaluated_count: int = Field(ge=0)
+    median_luminance: float | None = Field(default=None, ge=0, le=1)
+    maximum_deviation: float | None = Field(default=None, ge=0, le=1)
+    outlier_count: int = Field(default=0, ge=0)
+    accepted: bool
+    skipped_reason: str | None = None
 
 
 def read_image(path: Path) -> np.ndarray:
@@ -62,9 +77,7 @@ def evaluate_frame(
     mean_luminance = float(normalized.mean())
     dark_clip_ratio = float(np.mean(normalized <= (4.0 / 255.0)))
     bright_clip_ratio = float(np.mean(normalized >= (251.0 / 255.0)))
-    channel_clip_ratio = float(
-        np.mean(np.any((image <= 4) | (image >= 251), axis=2))
-    )
+    channel_clip_ratio = float(np.mean(np.any((image <= 4) | (image >= 251), axis=2)))
 
     reasons: list[str] = []
     if width < limits.min_width or height < limits.min_height:
@@ -110,3 +123,74 @@ def evaluate_frame(
         accepted=not reasons,
         reasons=reasons,
     )
+
+
+def apply_group_exposure_gate(
+    groups: dict[str, list[FrameQuality]],
+    *,
+    max_deviation: float = 0.08,
+    minimum_frames: int = 3,
+) -> list[SequenceExposureDiagnostic]:
+    """Reject frames whose mean luminance drifts from their capture-group median.
+
+    This intentionally operates after individual clipping and blur gates. Exposure
+    drift is measured only from decodable frames with a valid luminance estimate;
+    invalid frames remain rejected by their original per-frame diagnostics.
+    """
+
+    diagnostics: list[SequenceExposureDiagnostic] = []
+    for group_name in sorted(groups):
+        reports = groups[group_name]
+        eligible = [
+            report
+            for report in reports
+            if report.decodable and report.mean_luminance is not None
+        ]
+        if len(eligible) < minimum_frames:
+            diagnostics.append(
+                SequenceExposureDiagnostic(
+                    group=group_name,
+                    frame_count=len(reports),
+                    evaluated_count=len(eligible),
+                    accepted=True,
+                    skipped_reason=(
+                        f"need at least {minimum_frames} decodable frames for sequence drift"
+                    ),
+                )
+            )
+            continue
+
+        luminances = np.asarray(
+            [float(report.mean_luminance) for report in eligible],
+            dtype=np.float64,
+        )
+        median = float(np.median(luminances))
+        deviations = np.abs(luminances - median)
+        outlier_count = 0
+
+        for report, deviation in zip(eligible, deviations, strict=True):
+            if float(deviation) <= max_deviation:
+                continue
+            reason = (
+                f"exposure drift in {group_name}: luminance "
+                f"{report.mean_luminance:.4f}, median {median:.4f}, "
+                f"deviation {float(deviation):.4f} > {max_deviation:.4f}"
+            )
+            if reason not in report.reasons:
+                report.reasons.append(reason)
+            report.accepted = False
+            outlier_count += 1
+
+        diagnostics.append(
+            SequenceExposureDiagnostic(
+                group=group_name,
+                frame_count=len(reports),
+                evaluated_count=len(eligible),
+                median_luminance=median,
+                maximum_deviation=float(deviations.max(initial=0.0)),
+                outlier_count=outlier_count,
+                accepted=outlier_count == 0,
+            )
+        )
+
+    return diagnostics
