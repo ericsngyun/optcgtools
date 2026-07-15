@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "synthetic-card-semantic-001",
+  "session_id": "synthetic-card-en-001",
+  "mode": "image",
+  "source_path": "processed/registered/0000-synthetic.png",
+  "output_directory": "processed/semantic",
+  "prompts": [
+    {
+      "region_id": "character",
+      "semantic_region": "character",
+      "frame_index": 0,
+      "object_id": "character",
+      "points": [
+        { "x": 718, "y": 850, "foreground": true },
+        { "x": 180, "y": 170, "foreground": false }
+      ],
+      "box": {
+        "x_min": 280,
+        "y_min": 210,
+        "x_max": 1170,
+        "y_max": 1640
+      },
+      "multimask_output": false,
+      "notes": "Synthetic fixture only. Real prompts must be reviewed on the registered frame."
+    },
+    {
+      "region_id": "title-plate",
+      "semantic_region": "title-plate",
+      "frame_index": 0,
+      "object_id": "title-plate",
+      "points": [
+        { "x": 690, "y": 1720, "foreground": true }
+      ],
+      "box": {
+        "x_min": 120,
+        "y_min": 1580,
+        "x_max": 1310,
+        "y_max": 1900
+      },
+      "multimask_output": false
+    }
+  ],
+  "source_frame_paths": [],
+  "notes": "No copyrighted card image is included."
+}
