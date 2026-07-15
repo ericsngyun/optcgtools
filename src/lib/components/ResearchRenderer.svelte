@@ -20,6 +20,10 @@
   let backend = "pending";
   let error = "";
   let profileFileName = "Synthetic fixture";
+  let referenceUrl = "";
+  let referenceName = "No matched reference loaded";
+  let comparisonMode = "off";
+  let referenceOpacity = 0.55;
   let tiltXDeg = DEFAULT_RESEARCH_STATE.tiltXDeg;
   let tiltYDeg = DEFAULT_RESEARCH_STATE.tiltYDeg;
   let lightAzimuthDeg = DEFAULT_RESEARCH_STATE.lightAzimuthDeg;
@@ -53,11 +57,12 @@
     }
   });
 
-  onDestroy(() => renderer?.dispose());
+  onDestroy(() => {
+    renderer?.dispose();
+    if (referenceUrl) URL.revokeObjectURL(referenceUrl);
+  });
 
-  $: if (renderer) {
-    renderer.setState(currentState());
-  }
+  $: if (renderer) renderer.setState(currentState());
 
   $: if (renderer && profile !== lastProfile) {
     lastProfile = profile;
@@ -106,6 +111,16 @@
     }
   }
 
+  function loadReference(event) {
+    const file = event.currentTarget.files?.[0];
+    if (!file) return;
+    if (referenceUrl) URL.revokeObjectURL(referenceUrl);
+    referenceUrl = URL.createObjectURL(file);
+    referenceName = file.name;
+    comparisonMode = "overlay";
+    event.currentTarget.value = "";
+  }
+
   function resetPose() {
     tiltXDeg = DEFAULT_RESEARCH_STATE.tiltXDeg;
     tiltYDeg = DEFAULT_RESEARCH_STATE.tiltYDeg;
@@ -118,7 +133,14 @@
   }
 
   function exportState() {
-    const snapshot = renderer.snapshotState();
+    const snapshot = {
+      ...renderer.snapshotState(),
+      comparison: {
+        referenceName,
+        mode: comparisonMode,
+        opacity: Number(referenceOpacity)
+      }
+    };
     const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -132,6 +154,15 @@
 <section class="research-shell" aria-label="Physical material research renderer">
   <div class="research-viewport">
     <div bind:this={container} class="research-canvas-host" aria-label="Interactive 3D card"></div>
+    {#if referenceUrl && comparisonMode !== "off"}
+      <img
+        class:difference={comparisonMode === "difference"}
+        class="reference-overlay"
+        src={referenceUrl}
+        alt="Matched authenticated physical reference"
+        style:opacity={referenceOpacity}
+      />
+    {/if}
     <div class="research-status">
       <span class:failed={status === "error"}>{status}</span>
       <span>{backend}</span>
@@ -155,6 +186,24 @@
       <label for="research-profile">Material profile JSON</label>
       <input id="research-profile" type="file" accept="application/json,.json" on:change={loadProfile} />
       <p>{profileFileName} · {profile.classification.confidence}</p>
+    </div>
+
+    <div class="research-control-block">
+      <label for="matched-reference">Matched physical frame</label>
+      <input id="matched-reference" type="file" accept="image/*" on:change={loadReference} />
+      <p>{referenceName}</p>
+      <div class="research-segmented" aria-label="Comparison mode">
+        {#each ["off", "overlay", "difference"] as mode}
+          <button
+            class:active={comparisonMode === mode}
+            type="button"
+            disabled={!referenceUrl && mode !== "off"}
+            on:click={() => (comparisonMode = mode)}
+          >{mode}</button>
+        {/each}
+      </div>
+      <div class="research-label"><span>Reference opacity</span><output>{Number(referenceOpacity).toFixed(2)}</output></div>
+      <input type="range" min="0" max="1" step="0.01" bind:value={referenceOpacity} disabled={!referenceUrl} />
     </div>
 
     <div class="research-control-block">
