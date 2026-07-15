@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 718 1000">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#11131a"/><stop offset=".48" stop-color="#252a36"/><stop offset="1" stop-color="#08090d"/></linearGradient>
+    <radialGradient id="sun"><stop stop-color="#f2d780"/><stop offset=".22" stop-color="#c48142"/><stop offset=".55" stop-color="#733342" stop-opacity=".55"/><stop offset="1" stop-color="#11131a" stop-opacity="0"/></radialGradient>
+    <pattern id="waves" width="80" height="40" patternUnits="userSpaceOnUse"><path d="M0 22 Q20 2 40 22 T80 22" fill="none" stroke="#d9c684" stroke-opacity=".2" stroke-width="4"/></pattern>
+  </defs>
+  <rect width="718" height="1000" rx="34" fill="url(#bg)"/>
+  <rect x="18" y="18" width="682" height="964" rx="24" fill="none" stroke="#b9a665" stroke-width="6"/>
+  <circle cx="528" cy="248" r="225" fill="url(#sun)"/>
+  <rect x="34" y="92" width="650" height="650" fill="url(#waves)" opacity=".7"/>
+  <path d="M226 736 C168 604 174 404 294 280 C356 214 444 200 505 248 C556 288 572 372 534 444 C508 493 474 518 467 580 C459 657 504 704 535 736 Z" fill="#090a0d" stroke="#e7d99a" stroke-width="8"/>
+  <path d="M338 305 C294 352 286 418 311 474 M455 306 C501 354 512 418 486 477" fill="none" stroke="#e7d99a" stroke-width="9" stroke-linecap="round"/>
+  <circle cx="374" cy="402" r="19" fill="#d74646"/><circle cx="438" cy="402" r="19" fill="#d74646"/>
+  <path d="M345 510 Q404 558 470 507" fill="none" stroke="#e7d99a" stroke-width="10" stroke-linecap="round"/>
+  <text x="58" y="72" fill="#f4ead0" font-family="system-ui" font-size="34" font-weight="700">MATERIAL STUDY</text>
+  <text x="58" y="790" fill="#f4ead0" font-family="system-ui" font-size="24" letter-spacing="6">SPECIAL PARALLEL</text>
+  <line x1="58" y1="820" x2="660" y2="820" stroke="#a89862" stroke-width="3"/>
+  <text x="58" y="870" fill="#d5cec0" font-family="system-ui" font-size="24">Replace this image with a card scan.</text>
+  <text x="58" y="910" fill="#817b75" font-family="ui-monospace,monospace" font-size="18">No official card art is bundled.</text>
+</svg>
