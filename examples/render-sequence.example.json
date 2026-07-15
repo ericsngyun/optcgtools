@@ -1,0 +1,49 @@
+{
+  "profile": "./research-profile.example.json",
+  "outputDirectory": "./rendered-sequence-example",
+  "baseUrl": "http://127.0.0.1:4173",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "deviceScaleFactor": 1,
+  "headless": true,
+  "frames": [
+    {
+      "id": "tilt-x-minus-20",
+      "state": {
+        "presentationMode": "flat",
+        "tiltXDeg": 0,
+        "tiltYDeg": -20,
+        "lightAzimuthDeg": 32,
+        "lightElevationDeg": 38,
+        "lightDistance": 3.2,
+        "exposure": 1.15
+      }
+    },
+    {
+      "id": "tilt-x-zero",
+      "state": {
+        "presentationMode": "flat",
+        "tiltXDeg": 0,
+        "tiltYDeg": 0,
+        "lightAzimuthDeg": 32,
+        "lightElevationDeg": 38,
+        "lightDistance": 3.2,
+        "exposure": 1.15
+      }
+    },
+    {
+      "id": "tilt-x-plus-20",
+      "state": {
+        "presentationMode": "flat",
+        "tiltXDeg": 0,
+        "tiltYDeg": 20,
+        "lightAzimuthDeg": 32,
+        "lightElevationDeg": 38,
+        "lightDistance": 3.2,
+        "exposure": 1.15
+      }
+    }
+  ]
+}
