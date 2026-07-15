@@ -1,0 +1,110 @@
+.card {
+  width: min(68vw, 390px);
+  aspect-ratio: var(--card-aspect);
+  border-radius: var(--card-radius);
+  pointer-events: none;
+  perspective: 900px;
+  transform-style: preserve-3d;
+}
+
+.card__translater,
+.card__rotator,
+.card__front,
+.card__rotator > img,
+.card__front > * {
+  width: 100%;
+  aspect-ratio: var(--card-aspect);
+  border-radius: var(--card-radius);
+}
+
+.card__translater,
+.card__rotator {
+  display: grid;
+  transform-style: preserve-3d;
+}
+
+.card__rotator {
+  position: relative;
+  grid-area: 1 / 1;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  pointer-events: auto;
+  cursor: crosshair;
+  transform: rotateY(var(--rotate-x)) rotateX(var(--rotate-y));
+  transition: box-shadow 180ms ease;
+  box-shadow: 0 34px 65px -34px rgba(0, 0, 0, 0.95), 0 15px 25px -18px rgba(0, 0, 0, 0.9);
+}
+
+.card.interacting .card__rotator,
+.card__rotator:focus-visible {
+  box-shadow: 0 42px 80px -32px rgba(0, 0, 0, 0.95), 0 0 34px -13px rgba(255, 255, 255, 0.4);
+}
+
+.card__front,
+.card__back {
+  grid-area: 1 / 1;
+  overflow: hidden;
+  backface-visibility: hidden;
+}
+
+.card__back {
+  transform: rotateY(180deg) translateZ(1px);
+  object-fit: cover;
+}
+
+.card__front {
+  position: relative;
+  display: grid;
+  transform: translateZ(1px);
+  background: #111;
+}
+
+.card__front > * {
+  grid-area: 1 / 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.card__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: translateZ(0.1px);
+}
+
+.card__foil-base,
+.card__shine,
+.card__etch,
+.card__glare {
+  transform: translateZ(1px);
+}
+
+.card__foil-base { z-index: 2; }
+.card__shine { z-index: 3; }
+.card__etch { z-index: 4; }
+.card__glare { z-index: 5; }
+
+.card.masked .card__foil-base,
+.card.masked .card__shine,
+.card.masked .card__etch {
+  -webkit-mask-image: var(--mask);
+  mask-image: var(--mask);
+  -webkit-mask-size: cover;
+  mask-size: cover;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card__rotator {
+    transform: none;
+  }
+
+  .card__shine,
+  .card__glare,
+  .card__etch {
+    display: none;
+  }
+}
