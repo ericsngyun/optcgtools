@@ -8,6 +8,7 @@
     "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview",
+    "fetch:upstream": "bash scripts/fetch-upstream.sh",
     "check:source-pin": "node scripts/check-source-pin.mjs"
   },
   "devDependencies": {
