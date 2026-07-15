@@ -147,6 +147,15 @@ def detect_card_quad(image: np.ndarray, *, minimum_score: float = 0.56) -> QuadC
     return best
 
 
+def _orient_portrait(ordered: np.ndarray) -> np.ndarray:
+    source_width, source_height = _side_lengths(ordered)
+    if source_width <= source_height:
+        return ordered
+    # Rotate the corner correspondence without re-sorting it. Re-sorting by image
+    # position would restore the original landscape orientation and stretch the card.
+    return np.array([ordered[3], ordered[0], ordered[1], ordered[2]], dtype=np.float32)
+
+
 def warp_card(
     image: np.ndarray,
     quad: np.ndarray,
@@ -154,12 +163,7 @@ def warp_card(
     width: int = CANONICAL_WIDTH,
     height: int = CANONICAL_HEIGHT,
 ) -> tuple[np.ndarray, np.ndarray]:
-    ordered = order_quad(quad)
-    source_width, source_height = _side_lengths(ordered)
-    if source_width > source_height:
-        ordered = np.roll(ordered, -1, axis=0)
-        ordered = order_quad(ordered)
-
+    ordered = _orient_portrait(order_quad(quad))
     destination = np.array(
         [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
         dtype=np.float32,
@@ -193,6 +197,21 @@ def rectify_path(
     return warped, homography, candidate
 
 
+def _ratio_filtered_matches(
+    pairs: list[tuple[cv2.DMatch, ...]] | tuple[tuple[cv2.DMatch, ...], ...],
+    *,
+    ratio: float,
+) -> list[cv2.DMatch]:
+    good: list[cv2.DMatch] = []
+    for pair in pairs:
+        if len(pair) < 2:
+            continue
+        first, second = pair[0], pair[1]
+        if first.distance < ratio * second.distance:
+            good.append(first)
+    return good
+
+
 def register_residual(
     moving: np.ndarray,
     reference: np.ndarray,
@@ -223,7 +242,7 @@ def register_residual(
 
     matcher = cv2.BFMatcher(cv2.NORM_L2)
     pairs = matcher.knnMatch(descriptors_moving, descriptors_reference, k=2)
-    good = [first for first, second in pairs if first.distance < 0.72 * second.distance]
+    good = _ratio_filtered_matches(pairs, ratio=0.72)
     if len(good) < minimum_matches:
         raise GeometryError(f"only {len(good)} feature matches; need {minimum_matches}")
 
