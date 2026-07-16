@@ -8,6 +8,7 @@ rule for finish-family proposals.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -291,7 +292,11 @@ def load_promotion_ledger(path: Path, *, verify: bool = True) -> list[PromotionE
     return events
 
 
-def verify_promotion_ledger(events: list[PromotionEvent]) -> None:
+def verify_promotion_ledger(events: list[PromotionEvent], *, replay: bool = True) -> None:
+    """Verify hash-chain integrity AND (by default) semantically replay every
+    event through validate_transition. A valid-digest but semantically
+    malformed ledger — lane laundering, human-only bypass, rank jumps — fails
+    closed (independent-review finding, PR #15)."""
     previous_digest: str | None = None
     for index, event in enumerate(events):
         if event.sequence != index:
@@ -303,6 +308,18 @@ def verify_promotion_ledger(events: list[PromotionEvent]) -> None:
                 f"promotion event {event.event_id} digest mismatch: ledger was modified"
             )
         previous_digest = event.event_digest
+
+    if replay:
+        seen: list[PromotionEvent] = []
+        for event in events:
+            try:
+                validate_transition(seen, event)
+            except PromotionError as exc:
+                raise PromotionError(
+                    f"semantic replay failed at sequence {event.sequence} "
+                    f"({event.event_id}): {exc}"
+                ) from exc
+            seen.append(event)
 
 
 def current_revision_state(
@@ -474,6 +491,20 @@ def _validate_reference_requirements(
             raise PromotionError(
                 f"'{target}' requires source_quality_tier 'A', or 'B' with human review"
             )
+        # Independent-review finding (PR #15): a bare self-declared "B" is not
+        # auditable. Tier-B events must bind the bundle's fail-closed
+        # BundleTierRecord into the ledger via a fingerprint digest so a
+        # reviewer can recompute and confirm the recorded human review.
+        # (Content verification happens in optcg-promote via
+        # --bundle-tier-record; CI replays ledgers without bundle access.)
+        if candidate.source_quality_tier == "B":
+            tier_digest = candidate.fingerprint.get("bundle-tier-record", "")
+            if not re.fullmatch(r"[0-9a-f]{64}", tier_digest):
+                raise PromotionError(
+                    f"'{target}' with source_quality_tier 'B' requires fingerprint "
+                    "'bundle-tier-record' — the hex64 digest of the human-reviewed "
+                    "BundleTierRecord produced by `optcg-reference tier`"
+                )
         if not candidate.evidence_packet:
             raise PromotionError(f"'{target}' requires an evidence packet reference")
         if candidate.rights_status in (None, RightsStatus.UNKNOWN):

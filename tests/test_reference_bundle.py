@@ -823,3 +823,21 @@ def test_coverage_cli_verb_writes_record(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert set(payload["axes"]) == set(COVERAGE_AXES)
+
+
+def test_single_family_route_is_flagged_for_the_reviewer(tmp_path: Path) -> None:
+    """PR #15 independent-review finding 1: a route satisfied entirely by one
+    provenance family must say so explicitly in the record and rationale."""
+    bundle_root = make_bundle(tmp_path)
+    for index, angle in enumerate(("face-on", "tilt-left", "tilt-right"), start=1):
+        add_registered_source(
+            tmp_path,
+            bundle_root,
+            make_single_angle_source(f"ebay-00{index}", review_notes=f"ANGLE: {angle}"),
+        )
+    coverage = compute_bundle_coverage(bundle_root, computed_at=FIXED_TIME)
+    route = coverage.multi_angle_route
+    assert route.satisfied is True
+    assert route.qualifying_family_count == 1
+    assert route.single_family is True
+    assert "SINGLE-FAMILY ROUTE" in route.rationale

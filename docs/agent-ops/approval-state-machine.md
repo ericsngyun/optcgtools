@@ -63,15 +63,19 @@ defense against a deliberately malicious actor with repository write access:
   directories must therefore live under an `approved/` segment (e.g.
   `public/approved/…`); a digest manifest of approved assets is the planned
   stronger replacement.
-- `source_quality_tier` on a promotion event is a self-declared letter, like
-  `actor_type`: the promotion library validates only `A|B` vs `C`. The binding
-  of a declared tier to the bundle's computed, fail-closed `BundleTierRecord`
-  (including the tier-B human-review requirement) happens in `optcg-promote`
-  (`--bundle-tier-record`), not in the library — CI replays ledgers without
-  access to private bundles. Direct library callers can self-declare a tier;
-  the bracketing human-only gates (`exact-variant-verified` below,
-  `adversarial-review-passed` above) and PR review are the containment,
-  matching the existing self-declared `actor_type` model.
+- `source_quality_tier` on a promotion event is self-declared at the library
+  layer, like `actor_type`. Hardening after the PR #15 independent review:
+  a tier-`B` reference event is rejected unless its `fingerprint` carries
+  `bundle-tier-record` — the digest of the fail-closed, human-reviewed
+  `BundleTierRecord` — so the binding is auditable in-ledger; `optcg-promote
+  --bundle-tier-record` verifies the record's content and injects that digest.
+  A direct library caller can still fabricate a digest (CI replays ledgers
+  without access to private bundles); the bracketing human-only gates and PR
+  review remain the containment for that residual.
+- `verify_promotion_ledger` performs a full semantic replay (PR #15
+  independent-review hardening): a hash-valid but semantically malformed
+  ledger — lane laundering, human-only bypass, rank jumps — fails closed at
+  load, not only at append.
 - The misleading-language gate is a lint, not a proof: it matches word stems
   and can be evaded by paraphrase. The human review ladder is the real gate.
 - Client-side hooks (`.claude/settings.json`) are advisory for indirect

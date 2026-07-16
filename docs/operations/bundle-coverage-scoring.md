@@ -114,3 +114,16 @@ Unchanged, fail-closed properties:
 - `ANGLE: <label>` — human-recorded viewing angle (e.g. `ANGLE: tilt-left`);
   used only when diagnostics pose metadata is absent. Semicolon or newline
   ends the label.
+
+## Single-family route transparency (PR #15 independent review)
+
+The multi-angle reviewed-B route may be satisfied by sources from ONE
+provenance family — deliberately, because a remote contributor's controlled
+capture session is inherently one family, and the convergence directive
+requires the coherent multi-angle scenario to reach reviewed-B eligibility.
+The compensating controls are (a) the route record now carries
+`qualifying_family_count` and `single_family`, (b) a satisfied single-family
+route appends an explicit `SINGLE-FAMILY ROUTE` warning to the rationale that
+the named human tier-B reviewer must act on, and (c) tier-B eligibility still
+requires that named human review. Family counting itself always collapses
+same-seller and provenance-unknown sources.

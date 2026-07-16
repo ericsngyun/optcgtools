@@ -901,6 +901,12 @@ class MultiAngleRouteResult(StrictModel):
     distinct_angles: int = Field(ge=0)
     minimum_variant_confidence: float = Field(ge=0, le=1)
     composite_floor: float = Field(ge=0, le=1)
+    # Independent-review finding (PR #15): the route may be satisfied by a
+    # single provenance family (a contributor's controlled session IS one
+    # family), but that fact must be visible to the human reviewer, never
+    # implicit. Single-family satisfaction is flagged in the rationale.
+    qualifying_family_count: int = Field(ge=0, default=0)
+    single_family: bool = False
     satisfied: bool
     rationale: str = Field(min_length=1)
 
@@ -1206,6 +1212,14 @@ def compute_bundle_coverage(
     ]
     if exclusions:
         rationale_parts.append("excluded weak sources: " + " | ".join(exclusions))
+    qualifying_families = {_provenance_family_key(s) for s in qualifying}
+    single_family = len(qualifying_families) <= 1
+    if satisfied and single_family:
+        rationale_parts.append(
+            "SINGLE-FAMILY ROUTE: all qualifying sources belong to one provenance "
+            "family (one seller/contributor); the named human tier-B reviewer must "
+            "confirm the angle diversity is genuine and the family is trusted"
+        )
     rationale_parts.append(
         "human review is still required for tier-B eligibility; tier A is unaffected"
     )
@@ -1214,6 +1228,8 @@ def compute_bundle_coverage(
         distinct_angles=route_angles,
         minimum_variant_confidence=round(route_min_confidence, 4),
         composite_floor=COVERAGE_ROUTE_COMPOSITE_FLOOR,
+        qualifying_family_count=len(qualifying_families),
+        single_family=single_family,
         satisfied=satisfied,
         rationale="; ".join(rationale_parts),
     )

@@ -22,6 +22,7 @@ from optcg_material.promotion import (
     new_event_id,
     validate_family_proposal,
     validate_reference_family_proposal,
+    verify_promotion_ledger,
 )
 
 HASH = "a" * 64
@@ -1122,3 +1123,89 @@ def test_internal_reference_prototype_demote_and_re_promote(tmp_path: Path) -> N
     state = current_revision_state(load_promotion_ledger(ledger), "op05-119-luffy")
     assert state is not None
     assert state.state is ReferenceState.INTERNAL_REFERENCE_PROTOTYPE
+
+
+def test_hash_valid_but_lane_laundered_ledger_fails_semantic_replay(tmp_path: Path) -> None:
+    """PR #15 independent-review finding 2: a hash-chained ledger whose events
+    violate transition semantics (reference revision jumping into a physical
+    validation state) must fail verification, not just digest checks."""
+    from datetime import UTC, datetime
+
+    open_ref = PromotionEvent(
+        event_id="pro-" + "a" * 32,
+        sequence=0,
+        profile_id="laundered-profile",
+        revision=1,
+        action=PromotionAction.OPEN_REVISION,
+        lane=Lane.REFERENCE,
+        to_state="hypothesis",
+        actor="agent",
+        actor_type=ActorType.AGENT,
+        created_at=datetime(2026, 7, 17, tzinfo=UTC),
+    )
+    open_ref.event_digest = open_ref.content_digest()
+    laundered = PromotionEvent(
+        event_id="pro-" + "b" * 32,
+        sequence=1,
+        profile_id="laundered-profile",
+        revision=1,
+        action=PromotionAction.PROMOTE,
+        to_state="capture-validated",
+        from_state="hypothesis",
+        actor="agent",
+        actor_type=ActorType.AGENT,
+        source_session="fake-session",
+        input_hashes=["a" * 64],
+        rights_status=RightsStatus.LICENSED,
+        evidence_packet="fake.json",
+        created_at=datetime(2026, 7, 17, tzinfo=UTC),
+        previous_event_digest=open_ref.event_digest,
+    )
+    laundered.event_digest = laundered.content_digest()
+    with pytest.raises(PromotionError, match="semantic replay failed"):
+        verify_promotion_ledger([open_ref, laundered])
+
+
+def test_reference_tier_b_event_requires_tier_record_fingerprint(tmp_path: Path) -> None:
+    """PR #15 independent-review finding 3: a bare self-declared tier 'B' on a
+    reference event is rejected without the bundle-tier-record digest binding."""
+    ledger = tmp_path / "ledger.jsonl"
+    reference_open_revision(ledger)
+    reference_promote(
+        ledger,
+        ReferenceState.HYPOTHESIS,
+        ReferenceState.EXACT_VARIANT_VERIFIED,
+        actor="Eric Yun",
+        actor_type=ActorType.HUMAN,
+        technical_reviewer="Eric Yun",
+        reference_bundle_id="bundle-001",
+    )
+    reference_promote(
+        ledger,
+        ReferenceState.EXACT_VARIANT_VERIFIED,
+        ReferenceState.PUBLIC_REFERENCE_SUPPORTED,
+        reference_bundle_id="bundle-001",
+        input_hashes=["a" * 64],
+    )
+    with pytest.raises(PromotionError, match="bundle-tier-record"):
+        reference_promote(
+            ledger,
+            ReferenceState.PUBLIC_REFERENCE_SUPPORTED,
+            ReferenceState.REFERENCE_ASSETS_PROPOSED,
+            reference_bundle_id="bundle-001",
+            input_hashes=["a" * 64],
+            source_quality_tier="B",
+            evidence_packet="review/evidence.json",
+            rights_status=RightsStatus.LICENSED,
+        )
+    reference_promote(
+        ledger,
+        ReferenceState.PUBLIC_REFERENCE_SUPPORTED,
+        ReferenceState.REFERENCE_ASSETS_PROPOSED,
+        reference_bundle_id="bundle-001",
+        input_hashes=["a" * 64],
+        source_quality_tier="B",
+        evidence_packet="review/evidence.json",
+        rights_status=RightsStatus.LICENSED,
+        fingerprint={"bundle-tier-record": "d" * 64},
+    )
