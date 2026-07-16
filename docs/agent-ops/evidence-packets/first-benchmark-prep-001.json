@@ -1,0 +1,61 @@
+{
+  "task_id": "first-benchmark-stage1",
+  "run_id": "prep-001",
+  "repository_commit": "4b8b8086c397e2bf9e9ab2e187efcad76f978432",
+  "agent": "lead",
+  "agent_tool": "claude-code",
+  "model": "claude-fable-5",
+  "environment": {
+    "platform": "darwin",
+    "python": "3.12",
+    "node": "22",
+    "lockfiles_frozen": true
+  },
+  "source_session": "none-pending-operator",
+  "authentication_state": "not-applicable",
+  "rights_state": "not-applicable",
+  "commands_run": [
+    "npm ci",
+    "uv sync --frozen --group dev",
+    "scripts/agent-gates/run-quality-gates.sh",
+    "uv run pytest tests/test_promotion_cli.py",
+    "uv run python (jsonschema check of docs/agent-ops/task-packets/first-benchmark-stage1.json)"
+  ],
+  "tests": [
+    { "command": "scripts/agent-gates/run-quality-gates.sh", "result": "pass", "detail": "86 python tests, 7 web tests, gates clean before this change" },
+    { "command": "uv run pytest tests/test_promotion_cli.py -q", "result": "pass", "detail": "4 tests: open/status, human-only refusal, human promote + CI demote, bad JSON rejection" },
+    { "command": "uv run ruff check src tests", "result": "pass" }
+  ],
+  "visual_checks": [
+    { "description": "not applicable: documentation and CLI wrapper only; no rendering surface", "result": "not-run" }
+  ],
+  "artifacts": [
+    "src/optcg_material/promotion_cli.py",
+    "tests/test_promotion_cli.py",
+    "docs/agent-ops/task-packets/first-benchmark-stage1.json",
+    "docs/operations/first-benchmark-capture-checklist.md",
+    "docs/operations/first-benchmark-command-sheet.md"
+  ],
+  "observations": [
+    { "statement": "The existing optcg-material CLI already covers init, add, verify-auth, set-rights, strict and integrity-only checks, quality preflight, rectify with manual quadrilaterals, and register; no corrections were needed.", "evidence_state": "measured", "source": "src/optcg_material/cli.py" },
+    { "statement": "The promotion ledger had no CLI; optcg-promote (open-revision, promote, demote, status) now wraps the coded state machine and refuses human-only transitions for agent actors.", "evidence_state": "measured", "source": "tests/test_promotion_cli.py" },
+    { "statement": "Quality gate thresholds are 1200x1600 minimum card resolution, Laplacian variance 70, bright clip 3 percent, dark clip 8 percent, group luminance drift 0.08; the capture checklist states these numbers.", "evidence_state": "measured", "source": "src/optcg_material/quality.py" },
+    { "statement": "No physical captures exist; card identity, private session path, and authentication await the human operator.", "evidence_state": "unknown" }
+  ],
+  "inferences": [
+    { "statement": "The command sheet should let the operator run the full session without editing repository files, based on the CLI surface audit.", "evidence_state": "inferred" }
+  ],
+  "known_failures": [
+    "research-renderer Playwright test can time out under parallel software-GPU load; it passes in isolation"
+  ],
+  "unresolved_questions": [
+    "Which Stage 1 card (standard rare holo vs basic SR) the operator will supply",
+    "Whether tilt sequences will be stills or sweep videos"
+  ],
+  "recommended_state_transition": {
+    "profile_id": "pending-operator-card",
+    "to_state": "hypothesis",
+    "justification": "Preparation only; no card evidence exists, so no profile advances beyond hypothesis."
+  },
+  "human_approval_required": true
+}

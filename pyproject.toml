@@ -27,6 +27,7 @@ optcg-semantic = "optcg_material.semantic_cli:app"
 optcg-maps = "optcg_material.material_cli:app"
 optcg-fit = "optcg_material.fitting_cli:app"
 optcg-review = "optcg_material.review_cli:app"
+optcg-promote = "optcg_material.promotion_cli:app"
 
 [dependency-groups]
 dev = [
