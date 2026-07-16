@@ -2,9 +2,14 @@
 
 Fits ONE reference-derived renderer profile across all usable public-reference
 observations and emits the frozen-schema fitting report plus render/diff artifacts.
-Exit codes: 0 fit accepted, 1 usage/input error, 3 single-reference overfit
-rejection (hard gate), 4 renderer-model-limit diagnostic (finding; renderer is
-never extended from here)."""
+Acceptance policy is selectable via ``--policy``: the default
+``reference-synthesis-fit`` judges uncontrolled bundle media by perceptual and
+regional agreement criteria; ``physical-fit`` applies the strict absolute
+linear-RGB thresholds (docs/operations/reference-fit-policy.md).
+Exit codes: 0 fit accepted, 1 usage/input error or a policy-criteria rejection
+(the failing metric is named), 3 single-reference overfit rejection (hard gate),
+4 renderer-model-limit diagnostic (finding; renderer is never extended from
+here)."""
 
 from __future__ import annotations
 
@@ -17,6 +22,7 @@ from pydantic import ValidationError
 from rich.console import Console
 
 from .reference_fitting import (
+    FitPolicy,
     ReferenceFitError,
     ReferenceFitOptions,
     fit_reference_set,
@@ -47,6 +53,17 @@ def fit_command(
     manifest_path: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
     output_dir: Annotated[Path, typer.Option("--output-dir", "-o")],
     rounds: Annotated[int, typer.Option(min=1, max=5)] = 2,
+    policy: Annotated[
+        FitPolicy,
+        typer.Option(
+            "--policy",
+            help=(
+                "Acceptance policy: reference-synthesis-fit (perceptual/regional criteria "
+                "for uncontrolled public media, default) or physical-fit (strict absolute "
+                "linear-RGB thresholds)."
+            ),
+        ),
+    ] = FitPolicy.REFERENCE_SYNTHESIS,
     generated_at: Annotated[
         datetime | None,
         typer.Option(help="Fixed report timestamp for reproducible reruns."),
@@ -57,7 +74,7 @@ def fit_command(
         manifest = load_observation_manifest(manifest_path)
         options = ReferenceFitOptions(rounds=rounds)
         outcome = fit_reference_set(
-            root, manifest, output_dir, options=options, generated_at=generated_at
+            root, manifest, output_dir, options=options, generated_at=generated_at, policy=policy
         )
     except (ReferenceFitError, ValidationError, ValueError, OSError) as exc:
         _fail(str(exc))
