@@ -11,15 +11,18 @@ from rich.console import Console
 from .models import RightsStatus
 from .promotion import (
     ActorType,
+    Lane,
     ProfileState,
     PromotionAction,
     PromotionError,
     PromotionEvent,
+    ReferenceState,
     append_promotion,
     current_revision_state,
     load_promotion_ledger,
     new_event_id,
 )
+from .reference_bundle import BundleTierRecord
 
 app = typer.Typer(
     name="optcg-promote",
@@ -32,6 +35,9 @@ console = Console()
 LedgerArgument = Annotated[Path, typer.Argument(help="Promotion ledger JSONL path")]
 ActorOption = Annotated[str, typer.Option("--actor", help="Named human, agent, or CI identity")]
 ActorTypeOption = Annotated[ActorType, typer.Option("--actor-type")]
+LaneOption = Annotated[
+    Lane, typer.Option("--lane", help="Promotion lane: physical (Lane B) or reference (Lane A)")
+]
 
 
 def _fail(message: str) -> None:
@@ -55,7 +61,52 @@ def _parse_json_option(raw: str | None, option: str) -> dict:
     return parsed
 
 
+def _verify_bundle_tier_record(
+    tier: str | None,
+    reference_bundle_id: str | None,
+    record_path: Path | None,
+) -> None:
+    """Bind a declared ledger tier to the bundle's computed tier record.
+
+    The promotion library stays IO-pure (CI replays ledgers without access to
+    private bundles), so this operator-side check is where a self-declared
+    `--source-quality-tier` is verified against `optcg-reference tier` output —
+    including the fail-closed tier-B human-review requirement encoded in
+    BundleTierRecord itself. Direct library callers can still self-declare;
+    that residual is documented in the approval-state-machine threat model.
+    """
+    if tier is None:
+        return
+    if record_path is None:
+        _fail(
+            "--bundle-tier-record is required when declaring --source-quality-tier "
+            "on a reference-lane event (produce it with `optcg-reference tier`)"
+        )
+        return
+    try:
+        record = BundleTierRecord.model_validate_json(record_path.read_text(encoding="utf-8"))
+    except (OSError, ValidationError, ValueError) as exc:
+        _fail(f"unreadable or invalid bundle tier record {record_path}: {exc}")
+        return
+    if reference_bundle_id and record.bundle_id != reference_bundle_id:
+        _fail(
+            f"tier record bundle_id '{record.bundle_id}' does not match "
+            f"--reference-bundle-id '{reference_bundle_id}'"
+        )
+    if record.tier.value != tier:
+        _fail(f"declared tier '{tier}' does not match computed tier '{record.tier.value}'")
+    if not record.eligible_for_profile:
+        _fail(
+            f"bundle '{record.bundle_id}' is not eligible for a profile at tier "
+            f"'{record.tier.value}' (tier C, or tier B without a recorded human review)"
+        )
+
+
 def _append(ledger: Path, **fields) -> None:
+    # Keep `lane: None` (⇒ physical) for the common case so serialized events
+    # stay byte-identical to the pre-two-lane ledger format.
+    if fields.get("lane") is Lane.PHYSICAL:
+        fields["lane"] = None
     try:
         event = PromotionEvent(event_id=new_event_id(), sequence=0, **fields)
         event = append_promotion(ledger, event)
@@ -75,17 +126,35 @@ def open_revision_command(
     actor: ActorOption,
     actor_type: ActorTypeOption,
     revision: Annotated[int, typer.Option("--revision", min=1)],
-    to_state: Annotated[ProfileState, typer.Option("--to-state")] = (
-        ProfileState.AUTHENTICATED_CAPTURE_INGESTED
-    ),
+    lane: LaneOption = Lane.PHYSICAL,
+    to_state: Annotated[
+        str | None,
+        typer.Option(
+            "--to-state",
+            help="Entry state; defaults to authenticated-capture-ingested (physical) "
+            "or hypothesis (reference)",
+        ),
+    ] = None,
     source_session: Annotated[str | None, typer.Option("--source-session")] = None,
     input_hash: Annotated[list[str], typer.Option("--input-hash")] = [],  # noqa: B006 - typer collects repeats
     fingerprint: Annotated[
         str | None, typer.Option("--fingerprint", help='JSON object, e.g. {"captures":"<hash>"}')
     ] = None,
+    reference_bundle_id: Annotated[str | None, typer.Option("--reference-bundle-id")] = None,
+    source_quality_tier: Annotated[str | None, typer.Option("--source-quality-tier")] = None,
+    adversarial_review: Annotated[str | None, typer.Option("--adversarial-review")] = None,
+    linked_reference_revision: Annotated[
+        int | None, typer.Option("--linked-reference-revision")
+    ] = None,
     reason: Annotated[str | None, typer.Option("--reason")] = None,
 ) -> None:
     """Open a new profile revision at an entry state."""
+    if to_state is None:
+        to_state = (
+            ReferenceState.HYPOTHESIS.value
+            if lane is Lane.REFERENCE
+            else ProfileState.AUTHENTICATED_CAPTURE_INGESTED.value
+        )
     _append(
         ledger,
         profile_id=profile_id,
@@ -94,9 +163,14 @@ def open_revision_command(
         to_state=to_state,
         actor=actor,
         actor_type=actor_type,
+        lane=lane,
         source_session=source_session,
         input_hashes=_parse_hashes(input_hash),
         fingerprint=_parse_json_option(fingerprint, "--fingerprint"),
+        reference_bundle_id=reference_bundle_id,
+        source_quality_tier=source_quality_tier,
+        adversarial_review=adversarial_review,
+        linked_reference_revision=linked_reference_revision,
         reason=reason,
     )
 
@@ -105,11 +179,12 @@ def open_revision_command(
 def promote_command(
     ledger: LedgerArgument,
     profile_id: Annotated[str, typer.Option("--profile-id")],
-    from_state: Annotated[ProfileState, typer.Option("--from-state")],
-    to_state: Annotated[ProfileState, typer.Option("--to-state")],
+    from_state: Annotated[str, typer.Option("--from-state")],
+    to_state: Annotated[str, typer.Option("--to-state")],
     actor: ActorOption,
     actor_type: ActorTypeOption,
     revision: Annotated[int, typer.Option("--revision", min=1)],
+    lane: LaneOption = Lane.PHYSICAL,
     source_session: Annotated[str | None, typer.Option("--source-session")] = None,
     input_hash: Annotated[list[str], typer.Option("--input-hash")] = [],  # noqa: B006
     evidence_packet: Annotated[str | None, typer.Option("--evidence-packet")] = None,
@@ -117,10 +192,26 @@ def promote_command(
     technical_reviewer: Annotated[str | None, typer.Option("--technical-reviewer")] = None,
     rights_reviewer: Annotated[str | None, typer.Option("--rights-reviewer")] = None,
     rights_status: Annotated[RightsStatus | None, typer.Option("--rights-status")] = None,
+    reference_bundle_id: Annotated[str | None, typer.Option("--reference-bundle-id")] = None,
+    source_quality_tier: Annotated[str | None, typer.Option("--source-quality-tier")] = None,
+    adversarial_review: Annotated[str | None, typer.Option("--adversarial-review")] = None,
+    linked_reference_revision: Annotated[
+        int | None, typer.Option("--linked-reference-revision")
+    ] = None,
+    bundle_tier_record: Annotated[
+        Path | None,
+        typer.Option(
+            "--bundle-tier-record",
+            help="BundleTierRecord JSON from `optcg-reference tier`; required when "
+            "declaring --source-quality-tier on a reference-lane event",
+        ),
+    ] = None,
     reason: Annotated[str | None, typer.Option("--reason")] = None,
 ) -> None:
     """Advance one state. Review transitions require --actor-type human and a named reviewer."""
     raw_metrics = _parse_json_option(metrics, "--metrics")
+    if lane is Lane.REFERENCE:
+        _verify_bundle_tier_record(source_quality_tier, reference_bundle_id, bundle_tier_record)
     _append(
         ledger,
         profile_id=profile_id,
@@ -130,6 +221,7 @@ def promote_command(
         to_state=to_state,
         actor=actor,
         actor_type=actor_type,
+        lane=lane,
         source_session=source_session,
         input_hashes=_parse_hashes(input_hash),
         evidence_packet=evidence_packet,
@@ -137,6 +229,10 @@ def promote_command(
         technical_reviewer=technical_reviewer,
         rights_reviewer=rights_reviewer,
         rights_status=rights_status,
+        reference_bundle_id=reference_bundle_id,
+        source_quality_tier=source_quality_tier,
+        adversarial_review=adversarial_review,
+        linked_reference_revision=linked_reference_revision,
         reason=reason,
     )
 
@@ -145,12 +241,13 @@ def promote_command(
 def demote_command(
     ledger: LedgerArgument,
     profile_id: Annotated[str, typer.Option("--profile-id")],
-    from_state: Annotated[ProfileState, typer.Option("--from-state")],
-    to_state: Annotated[ProfileState, typer.Option("--to-state")],
+    from_state: Annotated[str, typer.Option("--from-state")],
+    to_state: Annotated[str, typer.Option("--to-state")],
     actor: ActorOption,
     actor_type: ActorTypeOption,
     revision: Annotated[int, typer.Option("--revision", min=1)],
     reason: Annotated[str, typer.Option("--reason", help="The failed gate or superseding evidence")],
+    lane: LaneOption = Lane.PHYSICAL,
 ) -> None:
     """Move to an earlier state after a failed gate; requires a reason."""
     _append(
@@ -162,6 +259,7 @@ def demote_command(
         to_state=to_state,
         actor=actor,
         actor_type=actor_type,
+        lane=lane,
         reason=reason,
     )
 
@@ -183,6 +281,7 @@ def status_command(
         raise typer.Exit(code=1)
     console.print(f"profile: [bold]{state.profile_id}[/bold]")
     console.print(f"revision: {state.revision}")
+    console.print(f"lane: [bold]{state.lane}[/bold]")
     console.print(f"state: [bold]{state.state}[/bold]")
     console.print(f"fingerprint: {json.dumps(state.fingerprint, sort_keys=True)}")
     console.print(f"head digest: {state.head_digest}")

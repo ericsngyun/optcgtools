@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://genkistuff.com/schemas/agent-ops/reference-bundle.schema.json",
+  "title": "OPTCG Reference Bundle Manifest",
+  "description": "Lane A (reference) bundle manifest (ADR-0002). Public repository copy: source URLs, hashes, verification, and rights metadata only. Normalized reference imagery is private-only and never committed.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "bundle_id",
+    "card_id",
+    "set_code",
+    "language",
+    "exact_print_variant",
+    "region_release",
+    "created_at",
+    "updated_at",
+    "variant_verification",
+    "rights_status",
+    "source_ids",
+    "private_media_root",
+    "manifest_digest"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "bundle_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,95}$" },
+    "card_id": { "type": "string", "minLength": 2, "maxLength": 64 },
+    "set_code": { "type": "string", "minLength": 2, "maxLength": 16 },
+    "language": { "enum": ["EN", "JP", "OTHER"] },
+    "exact_print_variant": { "type": "string", "minLength": 1 },
+    "region_release": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "variant_verification": {
+      "type": "object",
+      "required": ["verified", "method", "confidence"],
+      "properties": {
+        "verified": { "type": "boolean" },
+        "verifier": { "type": ["string", "null"], "minLength": 1 },
+        "method": { "type": "string", "minLength": 1 },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "rights_status": { "enum": ["owned-capture", "licensed", "restricted-research", "unknown"] },
+    "rights_reviewer": { "type": ["string", "null"], "minLength": 1 },
+    "tier": { "enum": ["A", "B", "C", null] },
+    "tier_override": {
+      "type": ["object", "null"],
+      "required": ["reviewer", "rationale"],
+      "properties": {
+        "reviewer": { "type": "string", "minLength": 1 },
+        "rationale": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "source_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,95}$" }
+    },
+    "sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "private_media_root": {
+      "type": "string",
+      "description": "Path outside the repository, e.g. ~/GenkiStuff/optcg-reference-lab/public-reference-bundles/<bundle-id>/"
+    },
+    "manifest_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "notes": { "type": "string" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "source": {
+      "type": "object",
+      "required": [
+        "source_id",
+        "source_url",
+        "source_type",
+        "retrieval_date",
+        "card_id",
+        "language",
+        "exact_print_variant",
+        "region_release",
+        "protection",
+        "media_form",
+        "useful_angles",
+        "macro_available",
+        "lighting_usefulness",
+        "compression_level",
+        "editing_likelihood",
+        "variant_confidence",
+        "proxy_counterfeit_risk",
+        "rights_status",
+        "retrieval_status"
+      ],
+      "properties": {
+        "source_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,95}$" },
+        "source_url": { "type": "string", "minLength": 1 },
+        "source_type": {
+          "enum": [
+            "ebay-listing",
+            "marketplace-database",
+            "retailer",
+            "official",
+            "collector-video",
+            "auction-house",
+            "other"
+          ]
+        },
+        "retrieval_date": { "type": "string", "format": "date-time" },
+        "card_id": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "language": { "enum": ["EN", "JP", "OTHER"] },
+        "exact_print_variant": { "type": "string", "minLength": 1 },
+        "region_release": { "type": "string", "minLength": 1 },
+        "seller_uploader": { "type": ["string", "null"] },
+        "protection": { "enum": ["raw", "sleeved", "toploader", "slabbed", "unknown"] },
+        "media_form": { "enum": ["still", "video"] },
+        "resolution": {
+          "type": ["object", "null"],
+          "required": ["width", "height"],
+          "properties": {
+            "width": { "type": "integer", "minimum": 1 },
+            "height": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        },
+        "useful_angles": { "type": "integer", "minimum": 0 },
+        "macro_available": { "type": "boolean" },
+        "lighting_usefulness": { "enum": ["none", "low", "medium", "high", "unknown"] },
+        "compression_level": { "enum": ["low", "medium", "high", "unknown"] },
+        "editing_likelihood": { "enum": ["low", "medium", "high", "unknown"] },
+        "variant_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "proxy_counterfeit_risk": { "enum": ["low", "medium", "high"] },
+        "rights_status": { "enum": ["owned-capture", "licensed", "restricted-research", "unknown"] },
+        "private_media_hash": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "retrieval_status": { "enum": ["retrieved", "blocked"] },
+        "review_notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

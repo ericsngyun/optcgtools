@@ -97,7 +97,11 @@
       "additionalProperties": false
     },
     "human_approval_required": { "type": "boolean" },
-    "reviewer": { "type": "string" }
+    "reviewer": { "type": "string" },
+    "lane": {
+      "enum": ["physical", "reference"],
+      "description": "ADR-0002 promotion lane. Absent or 'physical' means the original Lane B ladder."
+    }
   },
   "additionalProperties": false,
   "$defs": {
@@ -114,6 +118,7 @@
       "additionalProperties": false
     },
     "profileState": {
+      "description": "Union of both promotion-lane ladders (ADR-0002); membership in the correct lane is enforced in code, not by this schema.",
       "enum": [
         "hypothesis",
         "public-reference-supported",
@@ -127,7 +132,12 @@
         "profile-fitted",
         "render-reviewed",
         "capture-validated",
-        "production-validated"
+        "production-validated",
+        "exact-variant-verified",
+        "reference-assets-proposed",
+        "reference-profile-fitted",
+        "adversarial-review-passed",
+        "production-reference-derived"
       ]
     }
   }

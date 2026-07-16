@@ -28,6 +28,11 @@ optcg-maps = "optcg_material.material_cli:app"
 optcg-fit = "optcg_material.fitting_cli:app"
 optcg-review = "optcg_material.review_cli:app"
 optcg-promote = "optcg_material.promotion_cli:app"
+# Modules land in Phase 1 (ADR-0002); entry points resolving lazily is expected.
+optcg-reference = "optcg_material.reference_bundle_cli:main"
+optcg-reference-normalize = "optcg_material.reference_normalize_cli:main"
+optcg-appearance = "optcg_material.appearance_cli:main"
+optcg-reference-fit = "optcg_material.reference_fitting_cli:main"
 
 [dependency-groups]
 dev = [

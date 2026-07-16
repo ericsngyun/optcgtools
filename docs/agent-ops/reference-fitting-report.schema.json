@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://genkistuff.com/schemas/agent-ops/reference-fitting-report.schema.json",
+  "title": "OPTCG Cross-Reference Fitting Report",
+  "description": "Analysis-by-synthesis fitting report for Lane A (reference) profiles (ADR-0002). Fitting must reject profiles that match only one privileged reference; single_reference_overfit_flag records that check.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "bundle_id",
+    "profile_path",
+    "profile_blake3",
+    "per_source",
+    "cross_reference_consistency_score",
+    "single_reference_overfit_flag",
+    "privileged_reference_ids",
+    "outlier_report",
+    "aggregate_loss",
+    "generated_at"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "run_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,95}$" },
+    "bundle_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,95}$" },
+    "profile_path": { "type": "string", "minLength": 1 },
+    "profile_blake3": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "per_source": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/perSourceFit" }
+    },
+    "cross_reference_consistency_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "single_reference_overfit_flag": { "type": "boolean" },
+    "privileged_reference_ids": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,95}$" }
+    },
+    "outlier_report": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source_id", "reason", "metric"],
+        "properties": {
+          "source_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,95}$" },
+          "reason": { "type": "string", "minLength": 1 },
+          "metric": { "type": "number" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "aggregate_loss": { "type": "number", "minimum": 0 },
+    "generated_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "perSourceFit": {
+      "type": "object",
+      "required": [
+        "source_id",
+        "estimated_pose",
+        "light_direction",
+        "glare_center",
+        "light_hardness",
+        "exposure_scale",
+        "confidence_weight",
+        "candidate_render_path",
+        "difference_image_path",
+        "regional_error"
+      ],
+      "properties": {
+        "source_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,95}$" },
+        "estimated_pose": { "type": "object" },
+        "light_direction": {
+          "type": "object",
+          "required": ["azimuth_deg", "elevation_deg"],
+          "properties": {
+            "azimuth_deg": { "type": "number", "minimum": 0, "maximum": 360 },
+            "elevation_deg": { "type": "number", "minimum": -90, "maximum": 90 }
+          },
+          "additionalProperties": false
+        },
+        "glare_center": {
+          "type": "object",
+          "required": ["x", "y"],
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        "light_hardness": { "type": "number", "minimum": 0 },
+        "exposure_scale": { "type": "number", "minimum": 0 },
+        "confidence_weight": { "type": "number", "minimum": 0, "maximum": 1 },
+        "candidate_render_path": { "type": "string", "minLength": 1 },
+        "difference_image_path": { "type": "string", "minLength": 1 },
+        "regional_error": { "type": "object", "additionalProperties": { "type": "number" } },
+        "highlight_trajectory": {
+          "type": ["array", "null"],
+          "items": { "type": "object" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -6,12 +6,18 @@ this directory holds the machinery.
 | File | Purpose |
 | --- | --- |
 | `task-packet.schema.json` | Contract every substantial implementation task starts from |
-| `evidence-packet.schema.json` | Contract every completed material/rendering task emits |
-| `approval-state-machine.md` | The 13-state profile lifecycle and its coded enforcement |
+| `evidence-packet.schema.json` | Contract every completed material/rendering task emits (optional `lane` field, ADR-0002) |
+| `approval-state-machine.md` | The two-lane profile lifecycle (Lane B physical, Lane A reference) and its coded enforcement |
 | `concurrency-policy.md` + `ownership.json` | Path ownership and parallel-work rules |
 | `toolchain-validation.md` | How to verify Claude Code and Codex load the framework |
 | `first-benchmark-runbook.md` | Exact procedure for the first authenticated card |
 | `adr-0001-visual-data-control-plane.md` | FiftyOne + CVAT decision, phase-gated |
+| `adr-0002-two-lane-reference-synthesis.md` | Lane A (public-reference synthesis) decision and its five schemas |
+| `reference-bundle.schema.json` | Lane A bundle manifest and per-source record |
+| `reference-source-quality.schema.json` | Per-source quality score and bundle tier gate |
+| `acquisition-task.schema.json` | Human task recorded for a blocked reference retrieval |
+| `appearance-envelope.schema.json` | Robust cross-source observed-appearance proposal |
+| `reference-fitting-report.schema.json` | Cross-reference analysis-by-synthesis fitting report |
 
 ## Enforcement points
 

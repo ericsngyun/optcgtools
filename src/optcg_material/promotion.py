@@ -12,19 +12,30 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .models import RightsStatus
 from .semantic import canonical_digest
 
-PROMOTION_SCHEMA_VERSION = "1.0.0"
+PROMOTION_SCHEMA_VERSION = "1.1.0"
+SUPPORTED_SCHEMA_VERSIONS = ("1.0.0", "1.1.0")
 SLUG_PATTERN = r"^[a-z0-9][a-z0-9._-]{1,95}$"
 
 
 class PromotionError(RuntimeError):
     """Raised when a promotion event violates the approval state machine."""
+
+
+class Lane(StrEnum):
+    """The two promotion lanes (ADR-0002). Lane B (`physical`) is the original,
+    unmodified authenticated-capture ladder. Lane A (`reference`) is the new
+    public-reference synthesis ladder; it never reaches a physical-validation
+    state."""
+
+    PHYSICAL = "physical"
+    REFERENCE = "reference"
 
 
 class ProfileState(StrEnum):
@@ -74,6 +85,60 @@ HASHES_REQUIRED_FROM = ProfileState.AUTHENTICATED_CAPTURE_INGESTED
 METRICS_REQUIRED_FROM = ProfileState.PROFILE_FITTED
 
 
+class ReferenceState(StrEnum):
+    """Lane A (`reference`) ladder: public-reference synthesis for cards without
+    an authenticated physical capture. No member of this ladder is a
+    physical-validation state; a reference-lane revision can never reach one."""
+
+    HYPOTHESIS = "hypothesis"
+    EXACT_VARIANT_VERIFIED = "exact-variant-verified"
+    PUBLIC_REFERENCE_SUPPORTED = "public-reference-supported"
+    REFERENCE_ASSETS_PROPOSED = "reference-assets-proposed"
+    REFERENCE_PROFILE_FITTED = "reference-profile-fitted"
+    ADVERSARIAL_REVIEW_PASSED = "adversarial-review-passed"
+    PRODUCTION_REFERENCE_DERIVED = "production-reference-derived"
+
+
+REFERENCE_STATE_ORDER: tuple[ReferenceState, ...] = tuple(ReferenceState)
+REFERENCE_STATE_RANK: dict[ReferenceState, int] = {
+    state: rank for rank, state in enumerate(REFERENCE_STATE_ORDER)
+}
+
+# Lane-indexed registries. Lane B (physical) registries are the original,
+# byte-for-byte unchanged objects; Lane A (reference) registries are new. Keys
+# and values are lane-local enum members (ProfileState for Lane.PHYSICAL,
+# ReferenceState for Lane.REFERENCE); looked up only via `effective_lane`.
+LANE_STATES: dict[Lane, tuple[Any, ...]] = {
+    Lane.PHYSICAL: STATE_ORDER,
+    Lane.REFERENCE: REFERENCE_STATE_ORDER,
+}
+LANE_RANK: dict[Lane, dict[Any, int]] = {
+    Lane.PHYSICAL: STATE_RANK,
+    Lane.REFERENCE: REFERENCE_STATE_RANK,
+}
+LANE_HUMAN_ONLY: dict[Lane, frozenset[Any]] = {
+    Lane.PHYSICAL: HUMAN_ONLY_TARGETS,
+    Lane.REFERENCE: frozenset(
+        {
+            ReferenceState.EXACT_VARIANT_VERIFIED,
+            ReferenceState.ADVERSARIAL_REVIEW_PASSED,
+            ReferenceState.PRODUCTION_REFERENCE_DERIVED,
+        }
+    ),
+}
+LANE_ENTRY_STATES: dict[Lane, frozenset[Any]] = {
+    Lane.PHYSICAL: REVISION_ENTRY_STATES,
+    # Every new reference bundle re-passes the human variant gate: a reference
+    # revision may only enter at hypothesis.
+    Lane.REFERENCE: frozenset({ReferenceState.HYPOTHESIS}),
+}
+
+REFERENCE_BUNDLE_REQUIRED_FROM = ReferenceState.EXACT_VARIANT_VERIFIED
+REFERENCE_HASHES_REQUIRED_FROM = ReferenceState.PUBLIC_REFERENCE_SUPPORTED
+REFERENCE_TIER_EVIDENCE_RIGHTS_REQUIRED_FROM = ReferenceState.REFERENCE_ASSETS_PROPOSED
+REFERENCE_METRICS_REQUIRED_FROM = ReferenceState.REFERENCE_PROFILE_FITTED
+
+
 class ActorType(StrEnum):
     HUMAN = "human"
     AGENT = "agent"
@@ -97,8 +162,8 @@ class PromotionEvent(StrictModel):
     profile_id: Annotated[str, Field(pattern=SLUG_PATTERN)]
     revision: int = Field(ge=1)
     action: PromotionAction
-    from_state: ProfileState | None = None
-    to_state: ProfileState
+    from_state: ProfileState | ReferenceState | None = None
+    to_state: ProfileState | ReferenceState
     actor: str = Field(min_length=1, max_length=160)
     actor_type: ActorType
     technical_reviewer: str | None = Field(default=None, max_length=160)
@@ -115,9 +180,42 @@ class PromotionEvent(StrictModel):
     rights_status: RightsStatus | None = None
     evidence_packet: str | None = Field(default=None, max_length=500)
     reason: str | None = Field(default=None, max_length=4000)
+    # Lane A (reference) fields. All default to None so exclude_none=True
+    # reproduces historical schema-1.0.0 physical digests byte-for-byte.
+    lane: Lane | None = None
+    reference_bundle_id: Annotated[str | None, Field(pattern=SLUG_PATTERN)] = None
+    source_quality_tier: Annotated[str | None, Field(pattern=r"^[ABC]$")] = None
+    adversarial_review: str | None = Field(default=None, max_length=500)
+    linked_reference_revision: int | None = Field(default=None, ge=1)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     previous_event_digest: Annotated[str | None, Field(pattern=r"^[0-9a-f]{64}$")] = None
     event_digest: Annotated[str | None, Field(pattern=r"^[0-9a-f]{64}$")] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_state_fields(cls, data: Any) -> Any:
+        """Resolve `from_state`/`to_state` against the correct lane-local enum
+        before pydantic's field validation runs, since `hypothesis` and
+        `public-reference-supported` are valid members of both ladders and a
+        plain Union would otherwise always resolve to the physical enum."""
+        if not isinstance(data, dict):
+            return data
+        lane_raw = data.get("lane")
+        lane_value = lane_raw.value if isinstance(lane_raw, StrEnum) else lane_raw
+        lane = Lane(lane_value) if lane_value else Lane.PHYSICAL
+        state_enum = ProfileState if lane is Lane.PHYSICAL else ReferenceState
+        for key in ("from_state", "to_state"):
+            value = data.get(key)
+            if value is None:
+                continue
+            raw_value = value.value if isinstance(value, StrEnum) else value
+            try:
+                data[key] = state_enum(raw_value)
+            except ValueError as exc:
+                raise ValueError(
+                    f"'{raw_value}' is not a valid {lane.value}-lane state"
+                ) from exc
+        return data
 
     @field_validator("actor")
     @classmethod
@@ -126,11 +224,30 @@ class PromotionEvent(StrictModel):
             raise ValueError("actor must be named")
         return value
 
+    @field_validator("schema_version")
+    @classmethod
+    def schema_version_supported(cls, value: str) -> str:
+        if value not in SUPPORTED_SCHEMA_VERSIONS:
+            raise ValueError(f"unsupported promotion schema_version '{value}'")
+        return value
+
     @model_validator(mode="after")
     def demotion_requires_reason(self) -> PromotionEvent:
         if self.action is PromotionAction.DEMOTE and not (self.reason and self.reason.strip()):
             raise ValueError("demotions must state the failed gate or superseding evidence")
         return self
+
+    @model_validator(mode="after")
+    def reference_lane_requires_current_schema(self) -> PromotionEvent:
+        if self.effective_lane is Lane.REFERENCE and self.schema_version == "1.0.0":
+            raise ValueError(
+                "reference-lane events require promotion schema_version 1.1.0 or later"
+            )
+        return self
+
+    @property
+    def effective_lane(self) -> Lane:
+        return self.lane or Lane.PHYSICAL
 
     def content_digest(self) -> str:
         payload = self.model_dump(mode="json", exclude_none=True)
@@ -141,7 +258,8 @@ class PromotionEvent(StrictModel):
 class RevisionState(StrictModel):
     profile_id: str
     revision: int
-    state: ProfileState
+    state: ProfileState | ReferenceState
+    lane: Lane
     fingerprint: dict[str, str]
     head_digest: str | None
 
@@ -185,17 +303,21 @@ def current_revision_state(
 ) -> RevisionState | None:
     state: RevisionState | None = None
     fingerprint: dict[str, str] = {}
+    lane = Lane.PHYSICAL
     for event in events:
         if event.profile_id != profile_id:
             continue
         if state is None or event.revision != state.revision:
             fingerprint = dict(event.fingerprint)
+            # Lane is fixed at open-revision and is part of revision identity.
+            lane = event.effective_lane
         else:
             fingerprint.update(event.fingerprint)
         state = RevisionState(
             profile_id=profile_id,
             revision=event.revision,
             state=event.to_state,
+            lane=lane,
             fingerprint=fingerprint,
             head_digest=event.event_digest,
         )
@@ -215,10 +337,15 @@ def validate_transition(
             raise PromotionError(
                 f"revision must be {expected_revision}, got {candidate.revision}"
             )
-        if candidate.to_state not in REVISION_ENTRY_STATES:
+        if candidate.to_state not in LANE_ENTRY_STATES[candidate.effective_lane]:
+            if candidate.effective_lane is Lane.PHYSICAL:
+                raise PromotionError(
+                    "a new revision must start from hypothesis, public-reference-supported, "
+                    "or authenticated-capture-ingested"
+                )
             raise PromotionError(
-                "a new revision must start from hypothesis, public-reference-supported, "
-                "or authenticated-capture-ingested"
+                "a new reference-lane revision must start from hypothesis; every new "
+                "bundle re-passes the human variant gate"
             )
     else:
         if latest is None:
@@ -227,6 +354,13 @@ def validate_transition(
             raise PromotionError(
                 "promotion events must stay on the active revision; "
                 "open a new revision to change inputs"
+            )
+        # Lane is fixed at open-revision and is part of revision identity; a
+        # later event (including a demotion) may never switch lanes.
+        if candidate.effective_lane is not latest.lane:
+            raise PromotionError(
+                f"event lane '{candidate.effective_lane}' does not match "
+                f"revision lane '{latest.lane}'"
             )
         if candidate.from_state is not latest.state:
             raise PromotionError(
@@ -243,56 +377,112 @@ def validate_transition(
                 )
 
     if candidate.action is PromotionAction.PROMOTE:
-        current_rank = STATE_RANK[latest.state] if latest else -1
-        if STATE_RANK[candidate.to_state] != current_rank + 1:
+        rank_map = LANE_RANK[candidate.effective_lane]
+        current_rank = rank_map[latest.state] if latest else -1
+        if rank_map[candidate.to_state] != current_rank + 1:
             raise PromotionError(
                 f"promotion must advance one state at a time; "
                 f"'{latest.state if latest else 'none'}' cannot jump to '{candidate.to_state}'"
             )
     elif candidate.action is PromotionAction.DEMOTE:
-        if latest is None or STATE_RANK[candidate.to_state] >= STATE_RANK[latest.state]:
+        rank_map = LANE_RANK[candidate.effective_lane]
+        if latest is None or rank_map[candidate.to_state] >= rank_map[latest.state]:
             raise PromotionError("demotion must move to a strictly earlier state")
 
     _validate_requirements(candidate)
 
 
 def _validate_requirements(candidate: PromotionEvent) -> None:
+    lane = candidate.effective_lane
     target = candidate.to_state
-    rank = STATE_RANK[target]
+    rank = LANE_RANK[lane][target]
+    human_only = LANE_HUMAN_ONLY[lane]
 
     if candidate.action is not PromotionAction.DEMOTE:
-        if target in HUMAN_ONLY_TARGETS and candidate.actor_type is not ActorType.HUMAN:
+        if target in human_only and candidate.actor_type is not ActorType.HUMAN:
             raise PromotionError(
                 f"transition to '{target}' is human-only; actor_type is "
                 f"'{candidate.actor_type}'"
             )
 
-        if rank >= STATE_RANK[HASHES_REQUIRED_FROM]:
-            if not candidate.source_session:
-                raise PromotionError(f"'{target}' requires a source_session reference")
-            if not candidate.input_hashes:
-                raise PromotionError(f"'{target}' requires input content hashes")
+        if lane is Lane.PHYSICAL:
+            if rank >= STATE_RANK[HASHES_REQUIRED_FROM]:
+                if not candidate.source_session:
+                    raise PromotionError(f"'{target}' requires a source_session reference")
+                if not candidate.input_hashes:
+                    raise PromotionError(f"'{target}' requires input content hashes")
 
-        if rank >= STATE_RANK[EVIDENCE_REQUIRED_FROM] and not candidate.evidence_packet:
+            if rank >= STATE_RANK[EVIDENCE_REQUIRED_FROM] and not candidate.evidence_packet:
+                raise PromotionError(f"'{target}' requires an evidence packet reference")
+
+            if rank >= STATE_RANK[METRICS_REQUIRED_FROM] and not candidate.metrics:
+                raise PromotionError(f"'{target}' requires quantitative metrics")
+
+            if target in human_only and not candidate.technical_reviewer:
+                raise PromotionError(f"'{target}' requires a named technical_reviewer")
+
+            if target in (
+                ProfileState.CAPTURE_VALIDATED,
+                ProfileState.PRODUCTION_VALIDATED,
+            ) and candidate.rights_status in (None, RightsStatus.UNKNOWN):
+                raise PromotionError(f"'{target}' requires a resolved rights_status")
+
+            if target is ProfileState.PRODUCTION_VALIDATED and not candidate.rights_reviewer:
+                raise PromotionError(
+                    "'production-validated' requires a named rights_reviewer in addition "
+                    "to the technical_reviewer"
+                )
+        else:
+            _validate_reference_requirements(candidate, rank=rank, human_only=human_only)
+
+
+def _validate_reference_requirements(
+    candidate: PromotionEvent, *, rank: int, human_only: frozenset[Any]
+) -> None:
+    """Lane A (reference) requirement thresholds. See ADR-0002. `reference_bundle_id`
+    stands in for `source_session`: the reference lane has no source capture session."""
+    target = candidate.to_state
+    ref_rank = LANE_RANK[Lane.REFERENCE]
+
+    # Tier C source quality is never eligible for promotion, at any rank.
+    if candidate.source_quality_tier == "C":
+        raise PromotionError(
+            "source_quality_tier 'C' is never eligible for promotion; only 'A', or "
+            "'B' with recorded human review, may reach reference-assets-proposed or later"
+        )
+
+    if rank >= ref_rank[REFERENCE_BUNDLE_REQUIRED_FROM] and not candidate.reference_bundle_id:
+        raise PromotionError(f"'{target}' requires a reference_bundle_id")
+
+    if rank >= ref_rank[REFERENCE_HASHES_REQUIRED_FROM]:
+        if not candidate.input_hashes:
+            raise PromotionError(f"'{target}' requires input content hashes")
+        if not candidate.reference_bundle_id:
+            raise PromotionError(
+                f"'{target}' requires a reference_bundle_id in place of source_session"
+            )
+
+    if rank >= ref_rank[REFERENCE_TIER_EVIDENCE_RIGHTS_REQUIRED_FROM]:
+        if candidate.source_quality_tier not in ("A", "B"):
+            raise PromotionError(
+                f"'{target}' requires source_quality_tier 'A', or 'B' with human review"
+            )
+        if not candidate.evidence_packet:
             raise PromotionError(f"'{target}' requires an evidence packet reference")
-
-        if rank >= STATE_RANK[METRICS_REQUIRED_FROM] and not candidate.metrics:
-            raise PromotionError(f"'{target}' requires quantitative metrics")
-
-        if target in HUMAN_ONLY_TARGETS and not candidate.technical_reviewer:
-            raise PromotionError(f"'{target}' requires a named technical_reviewer")
-
-        if target in (
-            ProfileState.CAPTURE_VALIDATED,
-            ProfileState.PRODUCTION_VALIDATED,
-        ) and candidate.rights_status in (None, RightsStatus.UNKNOWN):
+        if candidate.rights_status in (None, RightsStatus.UNKNOWN):
             raise PromotionError(f"'{target}' requires a resolved rights_status")
 
-        if target is ProfileState.PRODUCTION_VALIDATED and not candidate.rights_reviewer:
-            raise PromotionError(
-                "'production-validated' requires a named rights_reviewer in addition "
-                "to the technical_reviewer"
-            )
+    if rank >= ref_rank[REFERENCE_METRICS_REQUIRED_FROM] and not candidate.metrics:
+        raise PromotionError(f"'{target}' requires quantitative metrics")
+
+    if target in human_only and not candidate.technical_reviewer:
+        raise PromotionError(f"'{target}' requires a named technical_reviewer")
+
+    if target is ReferenceState.PRODUCTION_REFERENCE_DERIVED and not candidate.rights_reviewer:
+        raise PromotionError(
+            "'production-reference-derived' requires a named rights_reviewer in "
+            "addition to the technical_reviewer"
+        )
 
 
 def append_promotion(ledger_path: Path, event: PromotionEvent) -> PromotionEvent:
@@ -328,4 +518,34 @@ def validate_family_proposal(family: str, cards: list[FamilyCardEvidence]) -> No
         raise PromotionError(
             f"finish family '{family}' requires at least two distinct authenticated, "
             f"capture-validated cards; found {len(distinct_cards)}"
+        )
+
+
+class ReferenceFamilyCardEvidence(StrictModel):
+    profile_id: Annotated[str, Field(pattern=SLUG_PATTERN)]
+    reference_bundle_id: Annotated[str, Field(pattern=SLUG_PATTERN)]
+    state: ReferenceState
+    card_id: str = Field(min_length=2, max_length=64)
+
+
+def validate_reference_family_proposal(
+    family: str, cards: list[ReferenceFamilyCardEvidence]
+) -> None:
+    """Reference-lane finish families are never established by rarity or
+    illustrator similarity alone: this requires at least two distinct card_ids
+    AND two distinct reference_bundle_ids, each at reference-state rank
+    >= adversarial-review-passed, with materially similar observed response.
+    Every card retains its own foil/metallic/suppression/composition/art-texture
+    masks regardless of shared family membership."""
+    threshold_rank = LANE_RANK[Lane.REFERENCE][ReferenceState.ADVERSARIAL_REVIEW_PASSED]
+    eligible = [
+        card for card in cards if LANE_RANK[Lane.REFERENCE][card.state] >= threshold_rank
+    ]
+    distinct_cards = {card.card_id for card in eligible}
+    distinct_bundles = {card.reference_bundle_id for card in eligible}
+    if len(distinct_cards) < 2 or len(distinct_bundles) < 2:
+        raise PromotionError(
+            f"reference finish family '{family}' requires at least two distinct card_ids "
+            "and two distinct reference_bundle_ids at adversarial-review-passed or later; "
+            f"found {len(distinct_cards)} card(s) and {len(distinct_bundles)} bundle(s)"
         )

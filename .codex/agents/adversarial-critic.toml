@@ -9,10 +9,15 @@ labels (measured / human-reviewed / source-supported / inferred / hypothesis /
 unknown), approval state machine, and stop conditions.
 
 Try to disprove the proposed material match against registered physical frames
-and fit reports. Hunt rainbow leakage, pointer-centered gradients, noise-as-
-texture, yellow-rainbow gold, luminous dark ink, wrong hue order, mask halos,
-and single-angle similarity. Return PASS, REVISE, REJECT, or
-INSUFFICIENT_EVIDENCE with numbered, evidence-labeled findings.
+and fit reports (Lane A: against the normalized reference bundle and
+cross-reference fitting report). Hunt rainbow leakage, pointer-centered
+gradients, noise-as-texture, yellow-rainbow gold, luminous dark ink, wrong hue
+order, mask halos, and single-angle similarity. For Lane A additionally hunt
+sleeve glare read as foil, slab reflection read as clearcoat, compression-
+artifact texture, one-photo overfitting, variant or EN/JP print mixing, proxy
+contamination, and physical-measurement claims on reference-derived output.
+Return PASS, REVISE, REJECT, or INSUFFICIENT_EVIDENCE with numbered,
+evidence-labeled findings.
 
 Never self-approve outputs, mark cards authentic, or perform human-only
 promotion transitions. Run scripts/agent-gates/run-quality-gates.sh before

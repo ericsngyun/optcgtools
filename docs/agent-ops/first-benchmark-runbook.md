@@ -5,6 +5,12 @@ Stage 1 of the benchmark order: a standard rare holo or basic SR foil.
 No speculative shader tuning happens before this card has a registered,
 human-reviewed frame stack.
 
+> **Lane A note (ADR-0002).** The reference-synthesis lane
+> (`docs/agent-ops/adr-0002-two-lane-reference-synthesis.md`) may proceed in
+> parallel without a physical card, starting from a verified-English reference
+> dossier and a private bundle. Lane A output is labeled `reference-derived`
+> and never substitutes for this runbook's authenticated physical benchmark.
+
 ## Prerequisites
 
 - A physical card in hand, authenticity recordable by a named human.
