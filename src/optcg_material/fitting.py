@@ -1,16 +1,16 @@
 from __future__ import annotations
 
+import itertools
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import cv2
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .material_maps import luminance, robust_normalize, srgb_to_linear_rgb
+from .material_maps import luminance, srgb_to_linear_rgb
 from .quality import read_image
 from .semantic import file_digest, read_binary_mask, safe_relative_path
 
@@ -161,33 +161,28 @@ def _gradient_magnitude(linear_rgb: np.ndarray) -> np.ndarray:
 
 
 def _opponent_hue(linear_rgb: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    red = linear_rgb[..., 0]
-    green = linear_rgb[..., 1]
-    blue = linear_rgb[..., 2]
+    red, green, blue = (linear_rgb[..., channel] for channel in range(3))
     x = red - 0.5 * (green + blue)
     y = (np.sqrt(3.0) / 2.0) * (green - blue)
-    hue = np.arctan2(y, x)
-    chroma = np.sqrt(x * x + y * y)
-    return hue, chroma
+    return np.arctan2(y, x), np.sqrt(x * x + y * y)
 
 
-def _circular_hue_error(
-    reference: np.ndarray,
-    candidate: np.ndarray,
-    mask: np.ndarray,
-) -> float:
+def _circular_hue_error(reference: np.ndarray, candidate: np.ndarray, mask: np.ndarray) -> float:
     reference_hue, reference_chroma = _opponent_hue(reference)
     candidate_hue, candidate_chroma = _opponent_hue(candidate)
     chroma = np.minimum(reference_chroma, candidate_chroma)
-    eligible = mask & (chroma > np.percentile(chroma[mask], 35) if np.any(mask) else False)
+    if not np.any(mask):
+        return 0.0
+    eligible = mask & (chroma > np.percentile(chroma[mask], 35))
     if not np.any(eligible):
         return 0.0
     delta = np.angle(np.exp(1j * (candidate_hue[eligible] - reference_hue[eligible])))
-    weights = chroma[eligible] + EPSILON
-    return float(np.average(np.abs(delta) / np.pi, weights=weights))
+    return float(np.average(np.abs(delta) / np.pi, weights=chroma[eligible] + EPSILON))
 
 
-def _highlight_centroid(luma: np.ndarray, mask: np.ndarray, percentile: float) -> tuple[float, float] | None:
+def _highlight_centroid(
+    luma: np.ndarray, mask: np.ndarray, percentile: float
+) -> tuple[float, float] | None:
     values = luma[mask]
     if values.size < 4:
         return None
@@ -197,9 +192,10 @@ def _highlight_centroid(luma: np.ndarray, mask: np.ndarray, percentile: float) -
     if coordinates.size == 0:
         return None
     weights = np.maximum(luma[highlight] - threshold, EPSILON)
-    y = float(np.average(coordinates[:, 0], weights=weights))
-    x = float(np.average(coordinates[:, 1], weights=weights))
-    return x, y
+    return (
+        float(np.average(coordinates[:, 1], weights=weights)),
+        float(np.average(coordinates[:, 0], weights=weights)),
+    )
 
 
 def _highlight_centroid_error(
@@ -219,32 +215,21 @@ def _highlight_centroid_error(
 
 
 def _region_metrics(
-    reference: np.ndarray,
-    candidate: np.ndarray,
-    mask: np.ndarray,
-    *,
-    percentile: float,
+    reference: np.ndarray, candidate: np.ndarray, mask: np.ndarray, *, percentile: float
 ) -> dict[str, float]:
-    if mask.dtype != bool:
-        mask = mask.astype(bool)
+    mask = mask.astype(bool, copy=False)
     if not np.any(mask):
         raise FitError("evaluation mask contains no pixels")
-
-    rgb_error = np.abs(reference - candidate)
     reference_gradient = _gradient_magnitude(reference)
     candidate_gradient = _gradient_magnitude(candidate)
     reference_luma = luminance(reference)
     candidate_luma = luminance(candidate)
-
     return {
-        "linear_rgb_mae": float(np.mean(rgb_error[mask])),
+        "linear_rgb_mae": float(np.mean(np.abs(reference - candidate)[mask])),
         "gradient_mae": float(np.mean(np.abs(reference_gradient - candidate_gradient)[mask])),
         "hue_error": _circular_hue_error(reference, candidate, mask),
         "highlight_centroid_error": _highlight_centroid_error(
-            reference_luma,
-            candidate_luma,
-            mask,
-            percentile,
+            reference_luma, candidate_luma, mask, percentile
         ),
         "exposure_error": float(abs(np.mean(reference_luma[mask]) - np.mean(candidate_luma[mask]))),
     }
@@ -266,7 +251,6 @@ def _prepare_frame(root: Path, frame: FitFrame, allow_resize: bool) -> PreparedF
     reference_bgr = read_image(reference_path)
     candidate_bgr = read_image(candidate_path)
     warnings: list[str] = []
-
     if reference_bgr.shape[:2] != candidate_bgr.shape[:2]:
         if not allow_resize:
             raise FitError(
@@ -279,16 +263,14 @@ def _prepare_frame(root: Path, frame: FitFrame, allow_resize: bool) -> PreparedF
             interpolation=cv2.INTER_LANCZOS4,
         )
         warnings.append("candidate resized to reference dimensions")
-
     shape = reference_bgr.shape[:2]
     regions: list[tuple[FitRegion, np.ndarray]] = []
     for region in frame.regions:
         mask = read_binary_mask(root / region.mask_path, expected_shape=shape)
-        if not np.any(mask):
+        if np.any(mask):
+            regions.append((region, mask))
+        else:
             warnings.append(f"region {region.name} is empty and was ignored")
-            continue
-        regions.append((region, mask))
-
     return PreparedFrame(
         frame=frame,
         reference_path=reference_path,
@@ -300,10 +282,7 @@ def _prepare_frame(root: Path, frame: FitFrame, allow_resize: bool) -> PreparedF
     )
 
 
-def _evaluate_prepared(
-    prepared: PreparedFrame,
-    request: FitSequenceRequest,
-) -> FrameMetric:
+def _evaluate_prepared(prepared: PreparedFrame, request: FitSequenceRequest) -> FrameMetric:
     height, width = prepared.reference_linear.shape[:2]
     full_mask = np.ones((height, width), dtype=bool)
     global_metrics = _region_metrics(
@@ -312,10 +291,9 @@ def _evaluate_prepared(
         full_mask,
         percentile=request.highlight_percentile,
     )
-
     region_results: list[RegionMetric] = []
-    weighted_region_losses: list[float] = []
-    weighted_region_weights: list[float] = []
+    weighted_losses: list[float] = []
+    weights: list[float] = []
     for region, mask in prepared.regions:
         metrics = _region_metrics(
             prepared.reference_linear,
@@ -331,16 +309,10 @@ def _evaluate_prepared(
                 **metrics,
             )
         )
-        weighted_region_losses.append(_weighted_loss(metrics, request.weights) * region.weight)
-        weighted_region_weights.append(region.weight)
-
+        weighted_losses.append(_weighted_loss(metrics, request.weights) * region.weight)
+        weights.append(region.weight)
     global_loss = _weighted_loss(global_metrics, request.weights)
-    if weighted_region_weights:
-        regional_loss = sum(weighted_region_losses) / sum(weighted_region_weights)
-        frame_loss = 0.45 * global_loss + 0.55 * regional_loss
-    else:
-        frame_loss = global_loss
-
+    frame_loss = 0.45 * global_loss + 0.55 * sum(weighted_losses) / sum(weights) if weights else global_loss
     return FrameMetric(
         frame_id=prepared.frame.frame_id,
         width=width,
@@ -355,14 +327,18 @@ def _evaluate_prepared(
 
 
 def _temporal_delta_error(prepared: list[PreparedFrame]) -> float:
-    if len(prepared) < 2:
-        return 0.0
-    losses: list[float] = []
-    for previous, current in zip(prepared, prepared[1:], strict=False):
-        reference_delta = current.reference_linear - previous.reference_linear
-        candidate_delta = current.candidate_linear - previous.candidate_linear
-        losses.append(float(np.mean(np.abs(reference_delta - candidate_delta))))
-    return float(np.mean(losses))
+    losses = [
+        float(
+            np.mean(
+                np.abs(
+                    (current.reference_linear - previous.reference_linear)
+                    - (current.candidate_linear - previous.candidate_linear)
+                )
+            )
+        )
+        for previous, current in itertools.pairwise(prepared)
+    ]
+    return float(np.mean(losses)) if losses else 0.0
 
 
 def evaluate_fit_sequence(root: Path, request: FitSequenceRequest) -> FitReport:
@@ -370,22 +346,18 @@ def evaluate_fit_sequence(root: Path, request: FitSequenceRequest) -> FitReport:
     metrics = [_evaluate_prepared(frame, request) for frame in prepared]
     temporal_error = _temporal_delta_error(prepared)
     mean_frame_loss = float(np.mean([frame.weighted_loss for frame in metrics]))
-    aggregate = mean_frame_loss + temporal_error * request.weights.temporal_delta
-    warnings = [warning for frame in metrics for warning in frame.warnings]
-
     profile_hash = None
     if request.profile_path is not None:
         profile = root / request.profile_path
         if not profile.is_file():
             raise FitError(f"profile does not exist: {request.profile_path}")
         profile_hash = file_digest(profile)
-
     report = FitReport(
         run_id=request.run_id,
         session_id=request.session_id,
         profile_blake3=profile_hash,
         weights=request.weights,
-        aggregate_loss=aggregate,
+        aggregate_loss=mean_frame_loss + temporal_error * request.weights.temporal_delta,
         mean_linear_rgb_mae=float(np.mean([frame.linear_rgb_mae for frame in metrics])),
         mean_gradient_mae=float(np.mean([frame.gradient_mae for frame in metrics])),
         mean_hue_error=float(np.mean([frame.hue_error for frame in metrics])),
@@ -395,9 +367,8 @@ def evaluate_fit_sequence(root: Path, request: FitSequenceRequest) -> FitReport:
         mean_exposure_error=float(np.mean([frame.exposure_error for frame in metrics])),
         temporal_delta_error=temporal_error,
         frames=metrics,
-        warnings=warnings,
+        warnings=[warning for frame in metrics for warning in frame.warnings],
     )
-
     output = root / request.output_path
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(report.model_dump_json(indent=2, exclude_none=True) + "\n", encoding="utf-8")
