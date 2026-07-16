@@ -1,3 +1,8 @@
+# Private card media must never enter the public repository
+private-references/
+raw-captures/
+marketplace-references/
+
 node_modules/
 dist/
 .vite/

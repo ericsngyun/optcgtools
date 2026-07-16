@@ -1,27 +1,16 @@
 # Current status
 
-Completed in the `holo-lab` foundation:
+Superseded as a live tracker: the README's "Current implementation order"
+section and GitHub issues are the source of truth for pipeline progress;
+`docs/agent-ops/README.md` tracks the agent operating framework.
 
-- pinned pokemon-cards-css engineering reference;
-- OPTCG finish taxonomy and capture protocol;
-- multi-channel CSS mask interface;
-- material-profile JSON schema;
-- synthetic profile fixture;
-- agent contracts;
-- frontier extraction architecture;
-- research-renderer, review-UI, CSS compiler, and 3D asset specifications;
-- benchmark and evaluation plans;
-- rights and private-storage boundaries.
+Snapshot (2026-07-15):
 
-Not yet implemented:
-
-- private capture storage;
-- capture CLI;
-- registration service;
-- SAM 2 region proposal worker;
-- measured material-map derivation;
-- WebGL/WebGPU reference renderer;
-- review workspace;
-- profile fitting;
-- GLB generation;
-- production GenkiStuff integration.
+- capture/provenance, quality gates, rectification, registration — implemented and tested;
+- semantic proposals (SAM 2.1 pinned), material-map extraction, physical
+  renderer, deterministic render sequences, fit evaluation, bounded profile
+  optimization — implemented; unvalidated on physical cards;
+- review ledger, promotion state machine, agent gates — implemented and tested;
+- review workspace UI, CSS profile compiler, GLB export — not implemented;
+- first authenticated benchmark card — not yet processed (see
+  `docs/agent-ops/first-benchmark-runbook.md`).
