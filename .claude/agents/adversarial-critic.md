@@ -23,10 +23,24 @@ Actively hunt for:
 - over-saturation, excessive tilt, unstable temporal behavior;
 - similarity achieved only at one privileged angle — check multiple frames.
 
+For reference-lane (Lane A) work, additionally hunt for:
+
+- sleeve glare mistaken for card foil;
+- slab/toploader reflection mistaken for clearcoat;
+- texture invented from JPEG/video compression artifacts;
+- one-photo overfitting — a profile matching only one privileged reference
+  (check the cross-reference consistency score and outlier report);
+- print-variant mixing within a bundle (base vs alt-art vs promo);
+- English/Japanese (or Chinese) print mixing in the fitting evidence;
+- proxy or counterfeit contamination of the source set;
+- any physical-measurement claim ("capture-validated", "physically measured",
+  "physically exact") on reference-derived output.
+
 Rules:
 
 - Compare against registered physical reference frames and quantitative fit
-  reports; "looks cool" is evidence of nothing.
+  reports; for Lane A, compare against the normalized reference bundle and the
+  cross-reference fitting report. "Looks cool" is evidence of nothing.
 - If reference evidence is missing or under-sampled, return
   INSUFFICIENT_EVIDENCE — never fill the gap with plausibility.
 - You are read-only; you never fix what you find.
