@@ -42,7 +42,13 @@ Agents must never:
 - overwrite approved assets in place (append-only; new revisions only);
 - bypass a failed registration, rights, or quality gate;
 - alter the pinned Pokémon reference source (`npm run check:source-pin`);
-- add infrastructure ahead of its phase gate (`docs/agent-ops/README.md`).
+- add infrastructure ahead of its phase gate (`docs/agent-ops/README.md`);
+- label Lane A (`reference`) work `capture-validated`, "physically measured",
+  or "physically exact" (ADR-0002);
+- generalize a reusable finish family, in either lane, by rarity or
+  illustrator similarity alone;
+- automate around anti-bot, paywall, or login controls when retrieving a
+  reference source — a blocked retrieval becomes a human acquisition task.
 
 ## Required uncertainty language
 
@@ -52,12 +58,19 @@ Label every conclusion as exactly one of:
 
 Never write "accurate", "validated", "matched", "faithful", "production-ready",
 or "approved" without the corresponding approval state and named reviewer.
-`scripts/agent-gates/check-evidence-packet.py` enforces this.
+`scripts/agent-gates/check-evidence-packet.py` enforces this. These six labels
+are canonical evidence states in both promotion lanes; Lane A's publication
+labels (`reference-derived`, `source-supported simulation`, `visually fitted
+across real-card references`) are a separate vocabulary for what may be
+published, not an additional evidence state.
 
 ## Approval state machine
 
 Profile lifecycle (enforced in code by `src/optcg_material/promotion.py`;
-details in `docs/agent-ops/approval-state-machine.md`):
+details in `docs/agent-ops/approval-state-machine.md`). Two lanes share the
+engine (ADR-0002, `docs/agent-ops/adr-0002-two-lane-reference-synthesis.md`):
+
+**Lane B (`physical`, unchanged) — authenticated capture:**
 
 ```text
 hypothesis → public-reference-supported → authenticated-capture-ingested
@@ -66,14 +79,40 @@ hypothesis → public-reference-supported → authenticated-capture-ingested
 → render-reviewed → capture-validated → production-validated
 ```
 
-- Transitions are append-only, hash-chained promotion events.
+**Lane A (`reference`, new) — public-reference synthesis for cards without an
+authenticated physical capture:**
+
+```text
+hypothesis → exact-variant-verified (human-only) → public-reference-supported
+→ reference-assets-proposed → reference-profile-fitted
+→ adversarial-review-passed (human-only)
+→ production-reference-derived (human-only; technical + rights reviewers)
+```
+
+Lane A publication labels are exactly one of: `reference-derived`,
+`source-supported simulation`, `visually fitted across real-card references`.
+These are publication labels, not evidence states — the six canonical
+evidence-state labels below remain the only vocabulary for evidence-packet
+claims, in both lanes.
+
+- Transitions are append-only, hash-chained promotion events; `lane` is fixed
+  at `open-revision` and immutable for the life of that revision.
 - Review/validation transitions are human-only; agents propose, ingest, and fit.
 - A failed earlier gate demotes the profile; later automatic outputs are invalid.
 - New captures, checkpoints, extraction algorithms, or major renderer versions
-  open a new profile revision — never mutate the current one.
-- `production-validated` requires named technical and rights reviewers.
+  open a new profile revision — never mutate the current one. Every new Lane A
+  reference bundle also opens a new revision, entering only at `hypothesis`.
+- `production-validated` (Lane B) and `production-reference-derived` (Lane A)
+  require named technical and rights reviewers.
 - A reusable finish family requires at least two authenticated,
-  capture-validated cards with materially similar measured behavior.
+  capture-validated cards with materially similar measured behavior (Lane B),
+  or at least two distinct cards **and** two distinct reference bundles at
+  `adversarial-review-passed` or later (Lane A). Rarity or illustrator
+  similarity alone can never establish a family in either lane; every card
+  keeps its own foil/metallic/suppression/composition/art-texture masks.
+
+See "Non-negotiable prohibitions" above for the Lane A labeling, family, and
+acquisition prohibitions.
 
 Per-session human review (checklist, blocking comments, technical/rights
 approval, publication gate) is enforced by `optcg-review`

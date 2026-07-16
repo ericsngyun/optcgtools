@@ -29,7 +29,9 @@
       "owner": "material-forensics",
       "paths": [
         "src/optcg_material/material_maps.py",
-        "src/optcg_material/material_cli.py"
+        "src/optcg_material/material_cli.py",
+        "src/optcg_material/appearance_envelope.py",
+        "src/optcg_material/appearance_cli.py"
       ]
     },
     "fitting": {
@@ -37,7 +39,18 @@
       "paths": [
         "src/optcg_material/fitting.py",
         "src/optcg_material/fitting_cli.py",
-        "src/optcg_material/candidate.py"
+        "src/optcg_material/candidate.py",
+        "src/optcg_material/reference_fitting.py",
+        "src/optcg_material/reference_fitting_cli.py"
+      ]
+    },
+    "reference-synthesis": {
+      "owner": "capture-operator",
+      "paths": [
+        "src/optcg_material/reference_bundle.py",
+        "src/optcg_material/reference_bundle_cli.py",
+        "src/optcg_material/reference_normalize.py",
+        "src/optcg_material/reference_normalize_cli.py"
       ]
     },
     "research-renderer": {

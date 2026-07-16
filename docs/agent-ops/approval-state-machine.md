@@ -69,6 +69,65 @@ defense against a deliberately malicious actor with repository write access:
   commits (scripts that shell out to git); CI re-runs the media/artifact/
   approved-asset gates server-side as the backstop.
 
+## Lane A (`reference`) — public-reference synthesis
+
+ADR-0002 (`adr-0002-two-lane-reference-synthesis.md`) adds a second lane for
+cards without an authenticated physical capture, on the same coded engine.
+
+```text
+hypothesis
+→ exact-variant-verified           (human-only)
+→ public-reference-supported
+→ reference-assets-proposed
+→ reference-profile-fitted
+→ adversarial-review-passed        (human-only)
+→ production-reference-derived     (human-only; technical + rights reviewers)
+```
+
+- **Human-only set:** `exact-variant-verified`, `adversarial-review-passed`,
+  `production-reference-derived`.
+- **Entry states:** a Lane A revision may only enter (and re-enter) at
+  `hypothesis` — every new reference bundle re-passes the human variant gate.
+  Lane B keeps its original three entry states unchanged.
+- **Thresholds:** `reference_bundle_id` required from `exact-variant-verified`;
+  `input_hashes` and `reference_bundle_id` (which stands in for
+  `source_session` — the reference lane has no capture session) from
+  `public-reference-supported`; `source_quality_tier` (`A`, or `B` only with
+  recorded human review; `C` is never eligible), an evidence packet, and a
+  resolved `rights_status` from `reference-assets-proposed`; quantitative
+  `metrics` from `reference-profile-fitted`; a named `technical_reviewer` on
+  every human-only target; a named `rights_reviewer` additionally at
+  `production-reference-derived`.
+- **Lane immutability.** `lane` is fixed at `open-revision` and is part of
+  revision identity. Every later event on that revision — including a
+  demotion — must match it; a differing lane is rejected. Cross-lane
+  demotion is therefore impossible.
+- **Reference family analog.** `validate_reference_family_proposal` requires
+  at least two distinct `card_id`s **and** two distinct
+  `reference_bundle_id`s, each at reference-state rank ≥
+  `adversarial-review-passed`. Rarity or illustrator similarity alone can
+  never establish a family; each card keeps its own foil/metallic/
+  suppression/composition/art-texture masks.
+- **Schema versions.** `PromotionEvent` gained a nullable `lane` field plus
+  nullable `reference_bundle_id`, `source_quality_tier`, `adversarial_review`,
+  and `linked_reference_revision` fields, all defaulting to `None`. Because
+  `content_digest()` serializes with `exclude_none=True`, a physical event
+  that never sets these fields is byte-identical to its pre-ADR-0002 form and
+  its digest is unchanged. The ledger schema version is now `1.1.0`; `1.0.0`
+  events remain loadable and verifiable, but reference-lane events require
+  `1.1.0` or later.
+- **Cross-lane calibration.** A Lane A profile later calibrated physically
+  opens a new revision of the same `profile_id` with `lane: physical`,
+  entering at `authenticated-capture-ingested`; `linked_reference_revision`
+  records the provenance link as metadata only.
+- **Labeling.** Lane A output must never carry `capture-validated`,
+  "physically measured", or "physically exact". The only valid publication
+  labels are `reference-derived`, `source-supported simulation`, and
+  `visually fitted across real-card references` — enforced structurally (no
+  Lane A state is a physical-validation state), by the publication gate
+  (`review.py check_publication`), and by the evidence-packet lint
+  (`check-evidence-packet.py`).
+
 ## Relationship to session review states
 
 `optcg-review` (`src/optcg_material/review.py`) governs the *per-session human

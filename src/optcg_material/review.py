@@ -19,7 +19,22 @@ REVIEW_LOG_RELATIVE_PATH = "review/review-log.jsonl"
 EVENT_ID_PATTERN = r"^[a-z0-9][a-z0-9-]{7,63}$"
 
 PUBLISHABLE_CONFIDENCE = ("capture-validated", "production-validated")
+# Lane A (reference) publication labels (ADR-0002). These are publication
+# labels, not evidence states: the six canonical evidence-state labels
+# (`measured`/`human-reviewed`/`source-supported`/`inferred`/`hypothesis`/
+# `unknown`) remain the only vocabulary for evidence-packet claims.
+REFERENCE_PUBLISHABLE_CONFIDENCE = (
+    "reference-derived",
+    "source-supported simulation",
+    "visually fitted across real-card references",
+)
 FORBIDDEN_ASSET_PATH_PARTS = ("raw", "private-references", "source")
+# Lane A output must never claim physical measurement or capture validation.
+FORBIDDEN_REFERENCE_PHRASES = (
+    "capture-validated",
+    "physically measured",
+    "physically exact",
+)
 
 
 class ReviewError(RuntimeError):
@@ -485,6 +500,7 @@ def check_publication(
 
     profile: dict[str, Any] | None = None
     profile_digest: str | None = None
+    raw: str | None = None
     try:
         raw = profile_path.read_text(encoding="utf-8")
         profile = json.loads(raw)
@@ -519,11 +535,29 @@ def check_publication(
         if not provenance.get("reviewer"):
             errors.append("profile provenance.reviewer is required for publication")
 
+        lane = profile.get("lane")
         confidence = profile.get("classification", {}).get("confidence")
-        if confidence not in PUBLISHABLE_CONFIDENCE:
-            errors.append(
-                f"classification confidence '{confidence}' is below capture-validated"
-            )
+        if lane == "reference":
+            if confidence not in REFERENCE_PUBLISHABLE_CONFIDENCE:
+                errors.append(
+                    f"classification confidence '{confidence}' is not a valid reference-lane "
+                    f"publication label; allowed: {', '.join(REFERENCE_PUBLISHABLE_CONFIDENCE)}"
+                )
+            if raw is not None:
+                lowered = raw.lower()
+                forbidden_found = [
+                    phrase for phrase in FORBIDDEN_REFERENCE_PHRASES if phrase in lowered
+                ]
+                if forbidden_found:
+                    errors.append(
+                        "reference-lane profile contains forbidden physical-claim phrase(s): "
+                        + ", ".join(forbidden_found)
+                    )
+        else:
+            if confidence not in PUBLISHABLE_CONFIDENCE:
+                errors.append(
+                    f"classification confidence '{confidence}' is below capture-validated"
+                )
 
         root = (assets_root or profile_path.parent).resolve()
         for name, asset in profile.get("assets", {}).items():

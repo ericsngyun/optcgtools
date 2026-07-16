@@ -25,3 +25,14 @@ the same PR that hands the work over).
    Never for concurrent edits to one subsystem. The lead agent synthesizes.
 7. **Stop condition.** If two agents would touch the same owned files, stop
    and report — do not race.
+
+## Lane A (reference-synthesis) parallel group
+
+ADR-0002 adds `reference-synthesis` (owner: `capture-operator`) as a path
+group parallel to the existing ones: `reference_bundle.py`,
+`reference_bundle_cli.py`, `reference_normalize.py`,
+`reference_normalize_cli.py`. Appearance-envelope code joins
+`material-extraction`; reference-fitting code joins `fitting`. See
+`ownership.json` for the exact path lists. The five new agent-ops schemas are
+the frozen interface contract between these Phase-1 groups — a group may not
+change another group's schema without transferring ownership.

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://genkistuff.com/schemas/agent-ops/acquisition-task.schema.json",
+  "title": "OPTCG Reference Acquisition Task",
+  "description": "A blocked reference retrieval becomes a human acquisition task (ADR-0002). Agents never automate around anti-bot controls; this schema intentionally carries no credential or bypass fields.",
+  "type": "object",
+  "required": [
+    "task_id",
+    "bundle_id",
+    "source_url",
+    "reason_blocked",
+    "detected_at",
+    "requested_media",
+    "status"
+  ],
+  "properties": {
+    "task_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,95}$" },
+    "bundle_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,95}$" },
+    "source_url": { "type": "string", "minLength": 1 },
+    "reason_blocked": {
+      "enum": ["anti-bot", "paywall", "login-required", "geoblock", "other"]
+    },
+    "detected_at": { "type": "string", "format": "date-time" },
+    "requested_media": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["open", "acquired", "abandoned"] },
+    "assignee": { "type": ["string", "null"] },
+    "resolution_notes": { "type": "string" }
+  },
+  "additionalProperties": false
+}
