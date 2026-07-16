@@ -1,0 +1,66 @@
+{
+  "runId": "synthetic-coordinate-fit-001",
+  "sessionRoot": "../private-references/synthetic-card-en-001",
+  "webProjectRoot": "..",
+  "outputDirectory": "review/optimization/synthetic-coordinate-fit-001",
+  "baseProfile": "./research-profile.example.json",
+  "renderTemplate": "./render-sequence.example.json",
+  "fitTemplate": "./fit-sequence.example.json",
+  "startServer": true,
+  "retainPerspective": false,
+  "maxPasses": 4,
+  "maxTrials": 60,
+  "improvementTolerance": 0.0005,
+  "parameters": [
+    {
+      "name": "renderer.foilStrength",
+      "min": 0.2,
+      "max": 1.4,
+      "step": 0.15,
+      "minimumStep": 0.01
+    },
+    {
+      "name": "renderer.metallicStrength",
+      "min": 0.2,
+      "max": 1.4,
+      "step": 0.15,
+      "minimumStep": 0.01
+    },
+    {
+      "name": "renderer.clearcoatRoughness",
+      "min": 0.02,
+      "max": 0.6,
+      "step": 0.06,
+      "minimumStep": 0.005
+    },
+    {
+      "name": "renderer.iridescence",
+      "min": 0.1,
+      "max": 1.0,
+      "step": 0.1,
+      "minimumStep": 0.005
+    },
+    {
+      "name": "renderer.iridescenceThicknessMinNm",
+      "min": 40,
+      "max": 600,
+      "step": 40,
+      "minimumStep": 2
+    },
+    {
+      "name": "renderer.iridescenceThicknessMaxNm",
+      "min": 100,
+      "max": 1200,
+      "step": 55,
+      "minimumStep": 2
+    },
+    {
+      "name": "renderer.anisotropyRotationRad",
+      "min": -3.141592653589793,
+      "max": 3.141592653589793,
+      "step": 0.2617993877991494,
+      "minimumStep": 0.004363323129985824
+    }
+  ],
+  "notes": "Illustrative only. Paths must be changed to an authenticated private session. Do not optimize against the public synthetic fixture and call the result physically accurate."
+}
