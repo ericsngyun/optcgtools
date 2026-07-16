@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://genkistuff.com/schemas/agent-ops/evidence-packet.schema.json",
+  "title": "OPTCG Lab Evidence Packet",
+  "description": "Every completed material or rendering task emits one. Facts, measurements, inferences, and subjective judgments must stay separated.",
+  "type": "object",
+  "required": [
+    "task_id",
+    "run_id",
+    "repository_commit",
+    "agent",
+    "agent_tool",
+    "environment",
+    "commands_run",
+    "tests",
+    "observations",
+    "recommended_state_transition",
+    "human_approval_required"
+  ],
+  "properties": {
+    "task_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,95}$" },
+    "run_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,95}$" },
+    "repository_commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+    "agent": { "type": "string", "minLength": 1 },
+    "agent_tool": { "enum": ["claude-code", "codex", "human", "ci", "other"] },
+    "model": { "type": "string" },
+    "environment": {
+      "type": "object",
+      "required": ["platform"],
+      "properties": {
+        "platform": { "type": "string" },
+        "python": { "type": "string" },
+        "node": { "type": "string" },
+        "gpu": { "type": "string" },
+        "lockfiles_frozen": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "input_hashes": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+    },
+    "source_session": { "type": "string" },
+    "authentication_state": { "enum": ["verified", "pending", "rejected", "not-applicable"] },
+    "rights_state": {
+      "enum": ["owned-capture", "licensed", "restricted-research", "unknown", "not-applicable"]
+    },
+    "commands_run": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "tests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["command", "result"],
+        "properties": {
+          "command": { "type": "string" },
+          "result": { "enum": ["pass", "fail", "skipped"] },
+          "detail": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "visual_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["description", "result"],
+        "properties": {
+          "description": { "type": "string" },
+          "result": { "enum": ["pass", "fail", "not-run"] },
+          "artifact": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "metrics": { "type": "object", "additionalProperties": { "type": "number" } },
+    "artifacts": { "type": "array", "items": { "type": "string" } },
+    "screenshots": { "type": "array", "items": { "type": "string" } },
+    "observations": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/labeledStatement" },
+      "description": "Each statement carries an explicit evidence label."
+    },
+    "inferences": { "type": "array", "items": { "$ref": "#/$defs/labeledStatement" } },
+    "subjective_judgments": { "type": "array", "items": { "type": "string" } },
+    "known_failures": { "type": "array", "items": { "type": "string" } },
+    "unresolved_questions": { "type": "array", "items": { "type": "string" } },
+    "recommended_state_transition": {
+      "type": "object",
+      "required": ["to_state"],
+      "properties": {
+        "profile_id": { "type": "string" },
+        "from_state": { "$ref": "#/$defs/profileState" },
+        "to_state": { "$ref": "#/$defs/profileState" },
+        "justification": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "human_approval_required": { "type": "boolean" },
+    "reviewer": { "type": "string" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "labeledStatement": {
+      "type": "object",
+      "required": ["statement", "evidence_state"],
+      "properties": {
+        "statement": { "type": "string", "minLength": 1 },
+        "evidence_state": {
+          "enum": ["measured", "human-reviewed", "source-supported", "inferred", "hypothesis", "unknown"]
+        },
+        "source": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "profileState": {
+      "enum": [
+        "hypothesis",
+        "public-reference-supported",
+        "authenticated-capture-ingested",
+        "quality-approved",
+        "registration-approved",
+        "masks-proposed",
+        "masks-reviewed",
+        "material-maps-proposed",
+        "material-maps-reviewed",
+        "profile-fitted",
+        "render-reviewed",
+        "capture-validated",
+        "production-validated"
+      ]
+    }
+  }
+}
