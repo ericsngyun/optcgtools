@@ -171,6 +171,10 @@ class ReferenceFitOptions(BaseModel):
     privilege_ratio: float = Field(default=2.0, ge=1)
     model_limit_threshold: float = Field(default=0.30, gt=0)
     min_valid_coverage: float = Field(default=0.2, gt=0, le=1)
+    # Aggregate acceptance gate: a profile must genuinely fit multiple sources,
+    # not merely avoid the overfit and model-limit rejections.
+    min_accepted_sources: int = Field(default=2, ge=1)
+    min_consistency_score: float = Field(default=0.35, ge=0, le=1)
 
 
 # ---------------------------------------------------------------------------
@@ -1247,6 +1251,27 @@ def fit_reference_set(
             + "; profile rejected"
         )
 
+    # Aggregate acceptance gate: uniformly-mediocre fits (every source above the
+    # accept threshold but below the model limit) and incoherent source sets are
+    # rejections, not silent acceptances.
+    accepted_sources = [
+        source_id
+        for source_id, error in errors.items()
+        if error <= options.accept_error_threshold
+    ]
+    if not overfit_flag and len(accepted_sources) < options.min_accepted_sources:
+        rejection_reasons.append(
+            f"insufficient fit quality: only {len(accepted_sources)} source(s) at or below "
+            f"the accept error threshold {options.accept_error_threshold}; at least "
+            f"{options.min_accepted_sources} required"
+        )
+    consistency = _consistency_score(errors, options)
+    if consistency < options.min_consistency_score:
+        rejection_reasons.append(
+            f"cross-reference consistency {consistency:.3f} is below the acceptance floor "
+            f"{options.min_consistency_score}; the profile does not cohere across sources"
+        )
+
     model_limit_diagnostic: str | None = None
     if errors and all(error > options.model_limit_threshold for error in errors.values()):
         model_limit_diagnostic = (
@@ -1282,7 +1307,7 @@ def fit_reference_set(
         profile_path=PROFILE_FILENAME,
         profile_blake3=profile_hash,
         per_source=per_source,
-        cross_reference_consistency_score=_consistency_score(errors, options),
+        cross_reference_consistency_score=consistency,
         single_reference_overfit_flag=overfit_flag,
         privileged_reference_ids=privileged,
         outlier_report=outliers,

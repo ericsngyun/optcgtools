@@ -536,8 +536,28 @@ def check_publication(
             errors.append("profile provenance.reviewer is required for publication")
 
         lane = profile.get("lane")
+        # Lane may not be laundered by omission: reference-synthesis provenance
+        # forces the reference branch (also enforced by the schema conditional).
+        if lane != "reference" and provenance.get("sourceType") == "public-reference-synthesis":
+            errors.append(
+                "profile with provenance.sourceType 'public-reference-synthesis' must "
+                "declare lane: reference; it may not be gated as a physical profile"
+            )
         confidence = profile.get("classification", {}).get("confidence")
         if lane == "reference":
+            # Fail closed: the reference lane has no capture session, and the
+            # bundle-review publication adapter (bundle manifest + tier record
+            # standing in for the session manifest) has not landed yet. Until it
+            # does, no reference-lane profile is publishable. ADR-0002 follow-up.
+            errors.append(
+                "reference-lane publication is blocked: the bundle-review publication "
+                "adapter (ADR-0002 follow-up) has not landed; a reference profile has "
+                "no capture session to verify and must not fake one"
+            )
+            if not provenance.get("referenceBundleId"):
+                errors.append(
+                    "reference-lane profile provenance requires a referenceBundleId"
+                )
             if confidence not in REFERENCE_PUBLISHABLE_CONFIDENCE:
                 errors.append(
                     f"classification confidence '{confidence}' is not a valid reference-lane "

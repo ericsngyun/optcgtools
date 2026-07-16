@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -832,3 +833,38 @@ def test_physical_event_with_new_fields_none_excludes_new_keys(tmp_path: Path) -
     assert len(events) == 1
     assert events[0].event_digest == appended.event_digest
     assert events[0].effective_lane is Lane.PHYSICAL
+
+
+def test_golden_digest_pin_for_schema_1_0_0_physical_event() -> None:
+    """Pins the exact serialized form and content digest of a schema-1.0.0
+    physical event to a literal constant. Any change to PromotionEvent that
+    alters either value breaks replay of every historical physical ledger —
+    this test must never be updated without an explicit ledger-migration plan."""
+    event = PromotionEvent(
+        schema_version="1.0.0",
+        event_id="pro-golden000000000000000000000000",
+        sequence=0,
+        profile_id="op05-119-luffy",
+        revision=1,
+        action=PromotionAction.OPEN_REVISION,
+        to_state="authenticated-capture-ingested",
+        actor="capture-operator",
+        actor_type=ActorType.AGENT,
+        source_session="op05-119-luffy-en-001",
+        input_hashes=["a" * 64],
+        fingerprint={"captures": "a" * 64},
+        created_at=datetime(2026, 7, 16, 0, 0, 0, tzinfo=UTC),
+    )
+    assert (
+        event.content_digest()
+        == "39dc789bbef4dd2a37ebc6a47e26e6eb8cea2986b4d0b56dc72a9c5107b15086"
+    )
+    serialized = event.model_dump_json(exclude_none=True)
+    for new_field in (
+        "lane",
+        "reference_bundle_id",
+        "source_quality_tier",
+        "adversarial_review",
+        "linked_reference_revision",
+    ):
+        assert f'"{new_field}"' not in serialized

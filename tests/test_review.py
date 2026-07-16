@@ -397,6 +397,7 @@ def write_reference_profile(
     confidence: str,
     rights_note: str = "GenkiStuff licensed reference bundle",
     asset_relative: str = "approved/albedo.png",
+    omit_lane: bool = False,
 ) -> Path:
     asset_path = root / "delivery" / asset_relative
     asset_path.parent.mkdir(parents=True, exist_ok=True)
@@ -418,8 +419,11 @@ def write_reference_profile(
             "rights": rights_note,
             "reviewStatus": "approved",
             "reviewer": REVIEWER,
+            "referenceBundleId": "op06-093-perona-v2-en-b001",
         },
     }
+    if omit_lane:
+        del profile["lane"]
     profile_path = root / "delivery" / "reference-profile.json"
     profile_path.write_text(json.dumps(profile), encoding="utf-8")
     return profile_path
@@ -433,8 +437,12 @@ def test_reference_publication_passes_with_allowed_label(tmp_path: Path) -> None
     approve_everything(tmp_path, profile_digest=sha256_of(profile_path))
 
     report = check_publication(tmp_path, profile_path, schema_path)
-    assert report.passed, report.errors
-    assert report.errors == []
+    # Fail closed (ADR-0002 follow-up): the bundle-review publication adapter
+    # has not landed, so even a fully-labeled reference profile is blocked —
+    # and the block must be the ONLY error (labels and phrases are clean).
+    assert not report.passed
+    assert [e for e in report.errors if "reference-lane publication is blocked" in e]
+    assert not [e for e in report.errors if "publication label" in e or "forbidden" in e]
 
 
 @pytest.mark.parametrize(
@@ -444,7 +452,7 @@ def test_reference_publication_passes_with_allowed_label(tmp_path: Path) -> None
         "visually fitted across real-card references",
     ],
 )
-def test_reference_publication_passes_for_every_allowed_label(
+def test_reference_publication_blocked_for_every_allowed_label(
     tmp_path: Path, confidence: str
 ) -> None:
     create_session(tmp_path)
@@ -454,7 +462,25 @@ def test_reference_publication_passes_for_every_allowed_label(
     approve_everything(tmp_path, profile_digest=sha256_of(profile_path))
 
     report = check_publication(tmp_path, profile_path, schema_path)
-    assert report.passed, report.errors
+    assert not report.passed
+    assert [e for e in report.errors if "reference-lane publication is blocked" in e]
+    assert not [e for e in report.errors if "publication label" in e or "forbidden" in e]
+
+
+def test_reference_profile_omitting_lane_is_rejected(tmp_path: Path) -> None:
+    """H1: reference-synthesis provenance may not be laundered into the
+    physical publication branch by omitting the lane field."""
+    create_session(tmp_path)
+    mark_authenticated(tmp_path)
+    schema_path = write_reference_schema(tmp_path)
+    profile_path = write_reference_profile(
+        tmp_path, confidence="reference-derived", omit_lane=True
+    )
+    approve_everything(tmp_path, profile_digest=sha256_of(profile_path))
+
+    report = check_publication(tmp_path, profile_path, schema_path)
+    assert not report.passed
+    assert any("must declare lane: reference" in error for error in report.errors)
 
 
 def test_reference_publication_rejects_physical_confidence_label(tmp_path: Path) -> None:

@@ -16,6 +16,7 @@ from optcg_material.reference_fitting import (
     Observation,
     ObservationFrame,
     ObservationSetManifest,
+    ReferenceFitOptions,
     ReferenceFitOutcome,
     ReferenceMaterialParams,
     fit_reference_set,
@@ -474,3 +475,35 @@ def test_cli_fit_rejects_overfit_set(
     payload = json.loads((tmp_path / "reference-fit-report.json").read_text(encoding="utf-8"))
     assert payload["single_reference_overfit_flag"] is True
     assert payload["privileged_reference_ids"] == ["good-a"]
+
+
+def test_uniformly_mediocre_fit_is_rejected(
+    coherent_case: tuple[Path, ObservationSetManifest],
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """M3 (adversarial code review): a profile that fits no source well must be
+    rejected, not silently accepted because it avoided the overfit and
+    model-limit rejections. Tightening the accept threshold below any
+    achievable error simulates the uniformly-mediocre observation set."""
+    root, manifest = coherent_case
+    output = tmp_path_factory.mktemp("mediocre-out")
+    options = ReferenceFitOptions(accept_error_threshold=1e-6)
+    outcome = fit_reference_set(
+        root, manifest, output, options=options, generated_at=FIXED_TIME
+    )
+    assert not outcome.accepted
+    assert any("insufficient fit quality" in reason for reason in outcome.rejection_reasons)
+
+
+def test_incoherent_consistency_is_rejected_by_floor(
+    coherent_case: tuple[Path, ObservationSetManifest],
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    root, manifest = coherent_case
+    output = tmp_path_factory.mktemp("consistency-out")
+    options = ReferenceFitOptions(min_consistency_score=1.0)
+    outcome = fit_reference_set(
+        root, manifest, output, options=options, generated_at=FIXED_TIME
+    )
+    assert not outcome.accepted
+    assert any("consistency" in reason for reason in outcome.rejection_reasons)

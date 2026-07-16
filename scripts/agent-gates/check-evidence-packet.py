@@ -75,6 +75,19 @@ FORBIDDEN_REFERENCE_PHRASES = (
     "physically measured",
     "physically exact",
 )
+# The complete Lane A ladder: a reference-lane packet may only recommend a
+# transition to one of these states.
+REFERENCE_LADDER_STATES = frozenset(
+    {
+        "hypothesis",
+        "exact-variant-verified",
+        "public-reference-supported",
+        "reference-assets-proposed",
+        "reference-profile-fitted",
+        "adversarial-review-passed",
+        "production-reference-derived",
+    }
+)
 
 
 def misleading_words_in(text: str) -> list[str]:
@@ -161,6 +174,13 @@ def check_packet(packet: dict) -> list[str]:
                 errors.append(
                     f"{section} uses forbidden reference-lane phrase(s) {found}: {text!r}"
                 )
+
+        recommended_state = transition.get("to_state")
+        if recommended_state and recommended_state not in REFERENCE_LADDER_STATES:
+            errors.append(
+                f"reference-lane packet recommends transition to '{recommended_state}', "
+                "which is not a reference-lane state"
+            )
 
     return errors
 

@@ -213,11 +213,29 @@ class TestEvidencePacketGate:
                     "evidence_state": "human-reviewed",
                 }
             ],
+            recommended_state_transition={"to_state": "reference-assets-proposed"},
         )
         path = tmp_path / "packet.json"
         path.write_text(json.dumps(packet), encoding="utf-8")
         result = run_gate("check-evidence-packet.py", str(path))
         assert result.returncode == 0, result.stderr
+
+    def test_reference_lane_packet_rejects_physical_transition_target(self, tmp_path: Path) -> None:
+        packet = make_packet(
+            lane="reference",
+            observations=[
+                {
+                    "statement": "Envelope proposals recorded for review.",
+                    "evidence_state": "source-supported",
+                }
+            ],
+            recommended_state_transition={"to_state": "material-maps-proposed"},
+        )
+        path = tmp_path / "packet.json"
+        path.write_text(json.dumps(packet), encoding="utf-8")
+        result = run_gate("check-evidence-packet.py", str(path))
+        assert result.returncode != 0
+        assert "not a reference-lane state" in result.stderr + result.stdout
 
 
 class TestPromotionGate:

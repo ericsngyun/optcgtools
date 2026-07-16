@@ -6,6 +6,7 @@
   "required": ["schemaVersion", "card", "classification", "assets", "renderer", "provenance"],
   "properties": {
     "schemaVersion": { "const": "1.0.0" },
+    "lane": { "enum": ["physical", "reference"] },
     "card": {
       "type": "object",
       "required": ["id", "game", "language"],
@@ -42,7 +43,15 @@
           ]
         },
         "confidence": {
-          "enum": ["hypothesis", "photo-validated", "capture-validated", "production-validated"]
+          "enum": [
+            "hypothesis",
+            "photo-validated",
+            "capture-validated",
+            "production-validated",
+            "reference-derived",
+            "source-supported simulation",
+            "visually fitted across real-card references"
+          ]
         },
         "evidence": {
           "type": "array",
@@ -97,9 +106,10 @@
       "type": "object",
       "required": ["sourceType", "rights", "reviewStatus"],
       "properties": {
-        "sourceType": { "enum": ["controlled-capture", "video-sweep", "licensed-photo", "marketplace-reference", "synthetic"] },
+        "sourceType": { "enum": ["controlled-capture", "video-sweep", "licensed-photo", "marketplace-reference", "synthetic", "public-reference-synthesis"] },
         "rights": { "type": "string" },
         "captureSession": { "type": "string" },
+        "referenceBundleId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,95}$" },
         "sourceUrls": { "type": "array", "items": { "type": "string", "format": "uri" } },
         "reviewStatus": { "enum": ["unreviewed", "needs-revision", "approved"] },
         "reviewer": { "type": "string" },
@@ -118,6 +128,51 @@
       "additionalProperties": false
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "lane": { "const": "reference" } },
+        "required": ["lane"]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "reference-derived",
+                  "source-supported simulation",
+                  "visually fitted across real-card references"
+                ]
+              }
+            }
+          },
+          "provenance": {
+            "required": ["sourceType", "rights", "reviewStatus", "referenceBundleId"],
+            "properties": { "sourceType": { "const": "public-reference-synthesis" } }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "classification": {
+            "properties": {
+              "confidence": {
+                "enum": ["hypothesis", "photo-validated", "capture-validated", "production-validated"]
+              }
+            }
+          },
+          "provenance": {
+            "properties": {
+              "sourceType": {
+                "enum": ["controlled-capture", "video-sweep", "licensed-photo", "marketplace-reference", "synthetic"]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "asset": {
       "type": "object",
