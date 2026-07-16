@@ -137,6 +137,7 @@
         "reference-assets-proposed",
         "reference-profile-fitted",
         "adversarial-review-passed",
+        "internal-reference-prototype",
         "production-reference-derived"
       ]
     }

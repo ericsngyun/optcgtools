@@ -495,6 +495,30 @@ def test_reference_publication_rejects_physical_confidence_label(tmp_path: Path)
     assert any("reference-lane publication label" in error for error in report.errors)
 
 
+def test_reference_publication_rejects_internal_reference_prototype(tmp_path: Path) -> None:
+    """ADR-0002 amendment: `internal-reference-prototype` is a real, human-
+    reviewed Lane A state but is explicitly non-publishable — private preview
+    only. The rejection must be explicit, not just the generic fail-closed
+    reference-lane block."""
+    create_session(tmp_path)
+    mark_authenticated(tmp_path)
+    schema_path = write_reference_schema(tmp_path)
+    profile_path = write_reference_profile(
+        tmp_path, confidence="internal-reference-prototype"
+    )
+    approve_everything(tmp_path, profile_digest=sha256_of(profile_path))
+
+    report = check_publication(tmp_path, profile_path, schema_path)
+    assert not report.passed
+    assert any(
+        "internal preview only" in error and "non-publishable" in error
+        for error in report.errors
+    )
+    # It is still blocked by the fail-closed reference-lane gate too (defense
+    # in depth), but must not also be flagged as an unrecognized label.
+    assert not [e for e in report.errors if "not a valid reference-lane publication label" in e]
+
+
 @pytest.mark.parametrize(
     "phrase",
     ["capture-validated", "physically measured", "physically exact"],

@@ -354,6 +354,18 @@ def test_reference_lane_happy_path(tmp_path: Path) -> None:
     reference_promote(
         ledger,
         ReferenceState.ADVERSARIAL_REVIEW_PASSED,
+        ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
+        reference_bundle_id="op05-119-luffy-en-bundle-001",
+        input_hashes=[HASH],
+        source_quality_tier="A",
+        evidence_packet="review/evidence/reference-assets.json",
+        rights_status=RightsStatus.LICENSED,
+        metrics={"cross_reference_consistency_score": 0.82},
+        adversarial_review="review/critic/op05-119-luffy.json",
+    )
+    reference_promote(
+        ledger,
+        ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
         ReferenceState.PRODUCTION_REFERENCE_DERIVED,
         reference_bundle_id="op05-119-luffy-en-bundle-001",
         input_hashes=[HASH],
@@ -361,6 +373,7 @@ def test_reference_lane_happy_path(tmp_path: Path) -> None:
         evidence_packet="review/evidence/reference-assets.json",
         rights_status=RightsStatus.LICENSED,
         metrics={"cross_reference_consistency_score": 0.82},
+        adversarial_review="review/critic/op05-119-luffy.json",
         rights_reviewer="GenkiStuff rights reviewer",
     )
 
@@ -388,6 +401,7 @@ def test_reference_lane_entry_must_be_hypothesis(tmp_path: Path) -> None:
     [
         ReferenceState.EXACT_VARIANT_VERIFIED,
         ReferenceState.ADVERSARIAL_REVIEW_PASSED,
+        ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
         ReferenceState.PRODUCTION_REFERENCE_DERIVED,
     ],
 )
@@ -397,6 +411,12 @@ def test_agent_cannot_perform_reference_human_only_transition(
     ledger = tmp_path / "promotions.jsonl"
     reference_open_revision(ledger)
     ladder = list(ReferenceState)
+    human_only_states = (
+        ReferenceState.EXACT_VARIANT_VERIFIED,
+        ReferenceState.ADVERSARIAL_REVIEW_PASSED,
+        ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
+        ReferenceState.PRODUCTION_REFERENCE_DERIVED,
+    )
     previous = ReferenceState.HYPOTHESIS
     for state in ladder[1:]:
         if state is target:
@@ -414,33 +434,27 @@ def test_agent_cannot_perform_reference_human_only_transition(
                     evidence_packet="review/evidence/reference-assets.json",
                     rights_status=RightsStatus.LICENSED,
                     metrics={"cross_reference_consistency_score": 0.5},
+                    adversarial_review="review/critic/op05-119-luffy.json",
                 )
             return
         reference_promote(
             ledger,
             previous,
             state,
-            actor="pipeline-agent" if state not in (
-                ReferenceState.EXACT_VARIANT_VERIFIED,
-                ReferenceState.ADVERSARIAL_REVIEW_PASSED,
-                ReferenceState.PRODUCTION_REFERENCE_DERIVED,
-            ) else "GenkiStuff reviewer",
-            actor_type=ActorType.AGENT if state not in (
-                ReferenceState.EXACT_VARIANT_VERIFIED,
-                ReferenceState.ADVERSARIAL_REVIEW_PASSED,
-                ReferenceState.PRODUCTION_REFERENCE_DERIVED,
-            ) else ActorType.HUMAN,
-            technical_reviewer=None if state not in (
-                ReferenceState.EXACT_VARIANT_VERIFIED,
-                ReferenceState.ADVERSARIAL_REVIEW_PASSED,
-                ReferenceState.PRODUCTION_REFERENCE_DERIVED,
-            ) else "GenkiStuff reviewer",
+            actor="pipeline-agent" if state not in human_only_states else "GenkiStuff reviewer",
+            actor_type=(
+                ActorType.AGENT if state not in human_only_states else ActorType.HUMAN
+            ),
+            technical_reviewer=(
+                None if state not in human_only_states else "GenkiStuff reviewer"
+            ),
             reference_bundle_id="op05-119-luffy-en-bundle-001",
             input_hashes=[HASH],
             source_quality_tier="A",
             evidence_packet="review/evidence/reference-assets.json",
             rights_status=RightsStatus.LICENSED,
             metrics={"cross_reference_consistency_score": 0.5},
+            adversarial_review="review/critic/op05-119-luffy.json",
             rights_reviewer=(
                 "GenkiStuff rights reviewer" if state is ReferenceState.PRODUCTION_REFERENCE_DERIVED else None
             ),
@@ -643,10 +657,22 @@ def test_reference_production_requires_rights_reviewer(tmp_path: Path) -> None:
         rights_status=RightsStatus.LICENSED,
         metrics={"cross_reference_consistency_score": 0.82},
     )
+    reference_promote(
+        ledger,
+        ReferenceState.ADVERSARIAL_REVIEW_PASSED,
+        ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
+        reference_bundle_id="op05-119-luffy-en-bundle-001",
+        input_hashes=[HASH],
+        source_quality_tier="A",
+        evidence_packet="review/evidence/reference-assets.json",
+        rights_status=RightsStatus.LICENSED,
+        metrics={"cross_reference_consistency_score": 0.82},
+        adversarial_review="review/critic/op05-119-luffy.json",
+    )
     with pytest.raises(PromotionError, match="rights_reviewer"):
         reference_promote(
             ledger,
-            ReferenceState.ADVERSARIAL_REVIEW_PASSED,
+            ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
             ReferenceState.PRODUCTION_REFERENCE_DERIVED,
             reference_bundle_id="op05-119-luffy-en-bundle-001",
             input_hashes=[HASH],
@@ -654,6 +680,7 @@ def test_reference_production_requires_rights_reviewer(tmp_path: Path) -> None:
             evidence_packet="review/evidence/reference-assets.json",
             rights_status=RightsStatus.LICENSED,
             metrics={"cross_reference_consistency_score": 0.82},
+            adversarial_review="review/critic/op05-119-luffy.json",
         )
 
 
@@ -868,3 +895,230 @@ def test_golden_digest_pin_for_schema_1_0_0_physical_event() -> None:
         "linked_reference_revision",
     ):
         assert f'"{new_field}"' not in serialized
+
+
+# ---------------------------------------------------------------------------
+# `internal-reference-prototype` (ADR-0002 amendment)
+# ---------------------------------------------------------------------------
+
+
+def _reference_ladder_to_adversarial_review_passed(ledger: Path) -> None:
+    """Shared setup for the `internal-reference-prototype` tests below: walks
+    a fresh reference-lane revision up to `adversarial-review-passed`."""
+    reference_open_revision(ledger)
+    reference_promote(
+        ledger,
+        ReferenceState.HYPOTHESIS,
+        ReferenceState.EXACT_VARIANT_VERIFIED,
+        reference_bundle_id="op05-119-luffy-en-bundle-001",
+    )
+    reference_promote(
+        ledger,
+        ReferenceState.EXACT_VARIANT_VERIFIED,
+        ReferenceState.PUBLIC_REFERENCE_SUPPORTED,
+        actor="pipeline-agent",
+        actor_type=ActorType.AGENT,
+        technical_reviewer=None,
+        reference_bundle_id="op05-119-luffy-en-bundle-001",
+        input_hashes=[HASH],
+    )
+    reference_promote(
+        ledger,
+        ReferenceState.PUBLIC_REFERENCE_SUPPORTED,
+        ReferenceState.REFERENCE_ASSETS_PROPOSED,
+        actor="pipeline-agent",
+        actor_type=ActorType.AGENT,
+        technical_reviewer=None,
+        reference_bundle_id="op05-119-luffy-en-bundle-001",
+        input_hashes=[HASH],
+        source_quality_tier="A",
+        evidence_packet="review/evidence/reference-assets.json",
+        rights_status=RightsStatus.LICENSED,
+    )
+    reference_promote(
+        ledger,
+        ReferenceState.REFERENCE_ASSETS_PROPOSED,
+        ReferenceState.REFERENCE_PROFILE_FITTED,
+        actor="pipeline-agent",
+        actor_type=ActorType.AGENT,
+        technical_reviewer=None,
+        reference_bundle_id="op05-119-luffy-en-bundle-001",
+        input_hashes=[HASH],
+        source_quality_tier="A",
+        evidence_packet="review/evidence/reference-assets.json",
+        rights_status=RightsStatus.LICENSED,
+        metrics={"cross_reference_consistency_score": 0.82},
+    )
+    reference_promote(
+        ledger,
+        ReferenceState.REFERENCE_PROFILE_FITTED,
+        ReferenceState.ADVERSARIAL_REVIEW_PASSED,
+        reference_bundle_id="op05-119-luffy-en-bundle-001",
+        input_hashes=[HASH],
+        source_quality_tier="A",
+        evidence_packet="review/evidence/reference-assets.json",
+        rights_status=RightsStatus.LICENSED,
+        metrics={"cross_reference_consistency_score": 0.82},
+    )
+
+
+def test_agent_cannot_promote_to_internal_reference_prototype(tmp_path: Path) -> None:
+    ledger = tmp_path / "promotions.jsonl"
+    _reference_ladder_to_adversarial_review_passed(ledger)
+    with pytest.raises(PromotionError, match="human-only"):
+        reference_promote(
+            ledger,
+            ReferenceState.ADVERSARIAL_REVIEW_PASSED,
+            ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
+            actor="pipeline-agent",
+            actor_type=ActorType.AGENT,
+            technical_reviewer=None,
+            reference_bundle_id="op05-119-luffy-en-bundle-001",
+            input_hashes=[HASH],
+            source_quality_tier="A",
+            evidence_packet="review/evidence/reference-assets.json",
+            rights_status=RightsStatus.LICENSED,
+            metrics={"cross_reference_consistency_score": 0.82},
+            adversarial_review="review/critic/op05-119-luffy.json",
+        )
+
+
+def test_internal_reference_prototype_requires_adversarial_review(tmp_path: Path) -> None:
+    ledger = tmp_path / "promotions.jsonl"
+    _reference_ladder_to_adversarial_review_passed(ledger)
+    with pytest.raises(PromotionError, match="adversarial_review"):
+        reference_promote(
+            ledger,
+            ReferenceState.ADVERSARIAL_REVIEW_PASSED,
+            ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
+            reference_bundle_id="op05-119-luffy-en-bundle-001",
+            input_hashes=[HASH],
+            source_quality_tier="A",
+            evidence_packet="review/evidence/reference-assets.json",
+            rights_status=RightsStatus.LICENSED,
+            metrics={"cross_reference_consistency_score": 0.82},
+            adversarial_review=None,
+        )
+
+
+def test_internal_reference_prototype_accepted_with_reviewer_and_critic_ref(
+    tmp_path: Path,
+) -> None:
+    ledger = tmp_path / "promotions.jsonl"
+    _reference_ladder_to_adversarial_review_passed(ledger)
+    reference_promote(
+        ledger,
+        ReferenceState.ADVERSARIAL_REVIEW_PASSED,
+        ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
+        reference_bundle_id="op05-119-luffy-en-bundle-001",
+        input_hashes=[HASH],
+        source_quality_tier="A",
+        evidence_packet="review/evidence/reference-assets.json",
+        rights_status=RightsStatus.LICENSED,
+        metrics={"cross_reference_consistency_score": 0.82},
+        adversarial_review="review/critic/op05-119-luffy.json",
+    )
+    state = current_revision_state(load_promotion_ledger(ledger), "op05-119-luffy")
+    assert state is not None
+    assert state.state is ReferenceState.INTERNAL_REFERENCE_PROTOTYPE
+
+
+def test_internal_reference_prototype_to_production_requires_rights_reviewer(
+    tmp_path: Path,
+) -> None:
+    ledger = tmp_path / "promotions.jsonl"
+    _reference_ladder_to_adversarial_review_passed(ledger)
+    reference_promote(
+        ledger,
+        ReferenceState.ADVERSARIAL_REVIEW_PASSED,
+        ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
+        reference_bundle_id="op05-119-luffy-en-bundle-001",
+        input_hashes=[HASH],
+        source_quality_tier="A",
+        evidence_packet="review/evidence/reference-assets.json",
+        rights_status=RightsStatus.LICENSED,
+        metrics={"cross_reference_consistency_score": 0.82},
+        adversarial_review="review/critic/op05-119-luffy.json",
+    )
+    with pytest.raises(PromotionError, match="rights_reviewer"):
+        reference_promote(
+            ledger,
+            ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
+            ReferenceState.PRODUCTION_REFERENCE_DERIVED,
+            reference_bundle_id="op05-119-luffy-en-bundle-001",
+            input_hashes=[HASH],
+            source_quality_tier="A",
+            evidence_packet="review/evidence/reference-assets.json",
+            rights_status=RightsStatus.LICENSED,
+            metrics={"cross_reference_consistency_score": 0.82},
+            adversarial_review="review/critic/op05-119-luffy.json",
+        )
+    reference_promote(
+        ledger,
+        ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
+        ReferenceState.PRODUCTION_REFERENCE_DERIVED,
+        reference_bundle_id="op05-119-luffy-en-bundle-001",
+        input_hashes=[HASH],
+        source_quality_tier="A",
+        evidence_packet="review/evidence/reference-assets.json",
+        rights_status=RightsStatus.LICENSED,
+        metrics={"cross_reference_consistency_score": 0.82},
+        adversarial_review="review/critic/op05-119-luffy.json",
+        rights_reviewer="GenkiStuff rights reviewer",
+    )
+    state = current_revision_state(load_promotion_ledger(ledger), "op05-119-luffy")
+    assert state is not None
+    assert state.state is ReferenceState.PRODUCTION_REFERENCE_DERIVED
+
+
+def test_internal_reference_prototype_demote_and_re_promote(tmp_path: Path) -> None:
+    ledger = tmp_path / "promotions.jsonl"
+    _reference_ladder_to_adversarial_review_passed(ledger)
+    reference_promote(
+        ledger,
+        ReferenceState.ADVERSARIAL_REVIEW_PASSED,
+        ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
+        reference_bundle_id="op05-119-luffy-en-bundle-001",
+        input_hashes=[HASH],
+        source_quality_tier="A",
+        evidence_packet="review/evidence/reference-assets.json",
+        rights_status=RightsStatus.LICENSED,
+        metrics={"cross_reference_consistency_score": 0.82},
+        adversarial_review="review/critic/op05-119-luffy.json",
+    )
+    reference_promote(
+        ledger,
+        ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
+        ReferenceState.ADVERSARIAL_REVIEW_PASSED,
+        action=PromotionAction.DEMOTE,
+        reference_bundle_id="op05-119-luffy-en-bundle-001",
+        input_hashes=[HASH],
+        source_quality_tier="A",
+        evidence_packet="review/evidence/reference-assets.json",
+        rights_status=RightsStatus.LICENSED,
+        metrics={"cross_reference_consistency_score": 0.82},
+        adversarial_review="review/critic/op05-119-luffy.json",
+        reason="critic flagged an unresolved fitting artifact; re-review before internal preview",
+        actor="pipeline-agent",
+        actor_type=ActorType.AGENT,
+        technical_reviewer=None,
+    )
+    state = current_revision_state(load_promotion_ledger(ledger), "op05-119-luffy")
+    assert state is not None
+    assert state.state is ReferenceState.ADVERSARIAL_REVIEW_PASSED
+
+    reference_promote(
+        ledger,
+        ReferenceState.ADVERSARIAL_REVIEW_PASSED,
+        ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
+        reference_bundle_id="op05-119-luffy-en-bundle-001",
+        input_hashes=[HASH],
+        source_quality_tier="A",
+        evidence_packet="review/evidence/reference-assets.json",
+        rights_status=RightsStatus.LICENSED,
+        metrics={"cross_reference_consistency_score": 0.82},
+        adversarial_review="review/critic/op05-119-luffy.json",
+    )
+    state = current_revision_state(load_promotion_ledger(ledger), "op05-119-luffy")
+    assert state is not None
+    assert state.state is ReferenceState.INTERNAL_REFERENCE_PROTOTYPE

@@ -90,11 +90,28 @@ hypothesis
 → reference-assets-proposed
 → reference-profile-fitted
 → adversarial-review-passed        (human-only)
+→ internal-reference-prototype     (human-only; requires an adversarial_review reference)
 → production-reference-derived     (human-only; technical + rights reviewers)
 ```
 
 - **Human-only set:** `exact-variant-verified`, `adversarial-review-passed`,
-  `production-reference-derived`.
+  `internal-reference-prototype`, `production-reference-derived`.
+- **`internal-reference-prototype` (ADR-0002 amendment).** Sits between the
+  critic gate and production derivation. It requires everything
+  `adversarial-review-passed` requires (evidence packet, `A`/reviewed-`B`
+  source tier, resolved rights, quantitative metrics) plus a non-empty
+  `adversarial_review` reference and a named `technical_reviewer`. What it
+  **permits**: private renderer/CSS previews only, for internal review after
+  exact-variant verification, minimum evidence review, manually reviewed
+  masks, and critic review. What it **forbids** (unchanged from every other
+  Lane A state): production publication, capture-validated claims, rights
+  bypass, and approved-asset overwrite — enforced structurally (no Lane A
+  state is a physical-validation state) and by the publication gate below,
+  which rejects it with an explicit "internal preview only, non-publishable"
+  error. `production-reference-derived` remains the only state one rank
+  closer to a publication label, and reaching it still requires passing
+  through `internal-reference-prototype` one state at a time, per the
+  approval ladder's non-negotiable one-hop-per-promotion rule.
 - **Entry states:** a Lane A revision may only enter (and re-enter) at
   `hypothesis` — every new reference bundle re-passes the human variant gate.
   Lane B keeps its original three entry states unchanged.
@@ -104,8 +121,9 @@ hypothesis
   `public-reference-supported`; `source_quality_tier` in `{A, B}` (`C` is
   rejected at any rank), an evidence packet, and a resolved `rights_status`
   from `reference-assets-proposed`; quantitative `metrics` from
-  `reference-profile-fitted`; a named `technical_reviewer` on every human-only
-  target; a named `rights_reviewer` additionally at
+  `reference-profile-fitted`; a non-empty `adversarial_review` reference from
+  `internal-reference-prototype`; a named `technical_reviewer` on every
+  human-only target; a named `rights_reviewer` additionally at
   `production-reference-derived`. The tier-B human-review requirement lives in
   the bundle's `BundleTierRecord` (fail-closed in
   `reference_bundle.py`); `optcg-promote promote` binds the declared ledger

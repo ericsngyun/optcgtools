@@ -52,6 +52,7 @@ STATE_NAME_TOKENS = (
     "reference-assets-proposed",
     "reference-profile-fitted",
     "adversarial-review-passed",
+    "internal-reference-prototype",
     "production-reference-derived",
 )
 TRUSTED_EVIDENCE_STATES = ("measured", "human-reviewed")
@@ -66,6 +67,7 @@ HUMAN_ONLY_STATES = {
     # Lane A (reference) human-only ladder states.
     "exact-variant-verified",
     "adversarial-review-passed",
+    "internal-reference-prototype",
     "production-reference-derived",
 }
 # Lane A output must never claim physical measurement or capture validation
@@ -85,6 +87,7 @@ REFERENCE_LADDER_STATES = frozenset(
         "reference-assets-proposed",
         "reference-profile-fitted",
         "adversarial-review-passed",
+        "internal-reference-prototype",
         "production-reference-derived",
     }
 )

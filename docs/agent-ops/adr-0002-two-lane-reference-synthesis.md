@@ -119,6 +119,85 @@ displacement maps derived from public imagery are labeled `inferred`.
 - **Reusing physical states behind a "synthetic" flag** — labeling by flag is
   exactly the laundering risk this ADR exists to prevent.
 
+## Amendment (2026-07-16) — `internal-reference-prototype`
+
+- Status: accepted.
+
+Insert a new Lane A rank, `internal-reference-prototype`, between
+`adversarial-review-passed` and `production-reference-derived`:
+
+```text
+...
+→ adversarial-review-passed        (human-only)
+→ internal-reference-prototype     (human-only; requires adversarial_review)
+→ production-reference-derived     (human-only; technical + rights reviewers)
+```
+
+**Purpose.** A state for private renderer/CSS previews after exact-variant
+verification, minimum evidence review, manually reviewed masks, and critic
+review, that is structurally incapable of being mistaken for a publication
+label. It permits private previews only; it never permits production
+publication, capture-validated claims, rights bypass, or approved-asset
+overwrite.
+
+**Encoding.** `ReferenceState.INTERNAL_REFERENCE_PROTOTYPE =
+"internal-reference-prototype"` is declared between
+`ADVERSARIAL_REVIEW_PASSED` and `PRODUCTION_REFERENCE_DERIVED`; enum
+declaration order derives `REFERENCE_STATE_ORDER`/`REFERENCE_STATE_RANK`, so
+the new member is automatically ranked correctly with no other code change to
+the rank derivation. It is added to `LANE_HUMAN_ONLY[Lane.REFERENCE]`. It
+inherits every `reference-assets-proposed`-and-later requirement (bundle id,
+hashes, tier/evidence/rights, metrics) and additionally requires a non-empty
+`adversarial_review` reference from this rank forward (a new
+`REFERENCE_ADVERSARIAL_REVIEW_REQUIRED_FROM` threshold), plus the named
+`technical_reviewer` every human-only target requires.
+
+**Rank-shift safety.** Inserting a rank in the middle of a linear, ordinal
+StrEnum shifts the rank of every state after it (here, only
+`production-reference-derived`, by one). This is safe today because no
+reference-lane promotion ledger is committed to this repository: reference
+bundles and their promotion history live only in the private bundle root
+(`~/GenkiStuff/optcg-reference-lab/public-reference-bundles/...`), and, per
+the two-lane evidence system's own operational state at the time of this
+amendment, every such private ledger is still at `hypothesis` or earlier — no
+private ledger has recorded a `promote` event past `hypothesis` yet. A rank
+shift is only unsafe for a ledger that has already recorded a `promote` to
+`production-reference-derived` (or any state after the insertion point) under
+the old rank numbering, because `validate_transition`'s one-hop check
+re-derives ranks from current code on every replay; no such ledger exists.
+Any future rank insertion into either ladder must re-verify this precondition
+against the private bundle roots before merging.
+
+**Publication gate.** `review.py check_publication` explicitly rejects a
+profile whose `classification.confidence` is
+`internal-reference-prototype` with an "internal preview only,
+non-publishable" error, distinct from (and in addition to) the existing
+fail-closed rejection of all reference-lane publication pending the
+bundle-review adapter. `production-reference-derived` remains the only
+publication-eligible state.
+
+**Evidence-packet lint.** `check-evidence-packet.py` gains
+`internal-reference-prototype` in `STATE_NAME_TOKENS` (so the state name is
+not itself flagged as a misleading claim), `HUMAN_ONLY_STATES`, and
+`REFERENCE_LADDER_STATES` (so it is a legal `to_state` recommendation for a
+reference-lane packet).
+
+**Digest compatibility.** No serialized field changed; `PromotionEvent`
+already carries `adversarial_review` (added in the original ADR-0002 change)
+and no new field was introduced. The physical lane and the 1.0.0 golden
+digest pin are untouched.
+
+**Pre-existing test extension (lead-authorized).** Inserting a mandatory rank
+between `adversarial-review-passed` and `production-reference-derived` turns
+the old direct one-hop promotion between them into a two-rank jump, which the
+unweakened one-state-at-a-time rule correctly rejects. Three pre-existing
+tests in `tests/test_promotion.py` (`test_reference_lane_happy_path`,
+`test_agent_cannot_perform_reference_human_only_transition`,
+`test_reference_production_requires_rights_reviewer`) were mechanically
+extended to walk the now-longer ladder through `internal-reference-prototype`
+instead of skipping it; no assertion's intent changed. This was flagged as a
+stop condition and explicitly authorized by the lead reviewer before merging.
+
 ## Consequences
 
 - Lane A work may begin immediately from verified-English dossiers, without a

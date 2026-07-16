@@ -28,6 +28,10 @@ REFERENCE_PUBLISHABLE_CONFIDENCE = (
     "source-supported simulation",
     "visually fitted across real-card references",
 )
+# `internal-reference-prototype` (ADR-0002 amendment) is a Lane A state, not a
+# publication label: profiles carrying it are explicitly non-publishable,
+# private-preview-only, and must never reach REFERENCE_PUBLISHABLE_CONFIDENCE.
+INTERNAL_REFERENCE_PROTOTYPE_CONFIDENCE = "internal-reference-prototype"
 FORBIDDEN_ASSET_PATH_PARTS = ("raw", "private-references", "source")
 # Lane A output must never claim physical measurement or capture validation.
 FORBIDDEN_REFERENCE_PHRASES = (
@@ -558,7 +562,19 @@ def check_publication(
                 errors.append(
                     "reference-lane profile provenance requires a referenceBundleId"
                 )
-            if confidence not in REFERENCE_PUBLISHABLE_CONFIDENCE:
+            if confidence == INTERNAL_REFERENCE_PROTOTYPE_CONFIDENCE:
+                # Explicit rejection distinct from the generic label check below:
+                # internal-reference-prototype is a real, human-reviewed Lane A
+                # state, but it is internal preview only and non-publishable —
+                # production-reference-derived remains the only path to a
+                # publication label, and that path is itself still fail-closed
+                # above pending the bundle-review adapter.
+                errors.append(
+                    "profile classification confidence 'internal-reference-prototype' is "
+                    "internal preview only; this profile is non-publishable until it is "
+                    "promoted to production-reference-derived"
+                )
+            elif confidence not in REFERENCE_PUBLISHABLE_CONFIDENCE:
                 errors.append(
                     f"classification confidence '{confidence}' is not a valid reference-lane "
                     f"publication label; allowed: {', '.join(REFERENCE_PUBLISHABLE_CONFIDENCE)}"

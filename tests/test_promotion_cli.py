@@ -258,3 +258,84 @@ def test_reference_tier_b_without_review_is_invalid_record(tmp_path: Path) -> No
     result = _promote_to_assets_proposed(ledger, ["--bundle-tier-record", str(record)])
     assert result.exit_code == 1
     assert "invalid bundle tier record" in result.output
+
+
+# --- `internal-reference-prototype` (ADR-0002 amendment) --------------------
+
+
+def test_internal_reference_prototype_state_string_passes_through(tmp_path: Path) -> None:
+    """The `--to-state internal-reference-prototype` string is accepted end
+    to end by the existing `--adversarial-review`/`--evidence-packet` flags —
+    no new CLI flags are needed for this state."""
+    ledger = tmp_path / "promotions.jsonl"
+    _reference_ladder_to_supported(ledger)
+    record = _tier_record_json(tmp_path)
+    result = _promote_to_assets_proposed(ledger, ["--bundle-tier-record", str(record)])
+    assert result.exit_code == 0, result.output
+
+    result = runner.invoke(
+        app,
+        [
+            "promote", str(ledger),
+            "--profile-id", "op06-093-perona-v2",
+            "--from-state", "reference-assets-proposed",
+            "--to-state", "reference-profile-fitted",
+            "--actor", "capture-operator", "--actor-type", "agent",
+            "--revision", "1", "--lane", "reference",
+            "--reference-bundle-id", "op06-093-perona-v2-en-b001",
+            "--input-hash", HASH,
+            "--source-quality-tier", "B",
+            "--evidence-packet", "docs/agent-ops/evidence-packets/synthetic.json",
+            "--rights-status", "restricted-research",
+            "--metrics", '{"cross_reference_consistency_score": 0.8}',
+            "--bundle-tier-record", str(record),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    result = runner.invoke(
+        app,
+        [
+            "promote", str(ledger),
+            "--profile-id", "op06-093-perona-v2",
+            "--from-state", "reference-profile-fitted",
+            "--to-state", "adversarial-review-passed",
+            "--actor", "Eric Yun", "--actor-type", "human",
+            "--technical-reviewer", "Eric Yun",
+            "--revision", "1", "--lane", "reference",
+            "--reference-bundle-id", "op06-093-perona-v2-en-b001",
+            "--input-hash", HASH,
+            "--source-quality-tier", "B",
+            "--evidence-packet", "docs/agent-ops/evidence-packets/synthetic.json",
+            "--rights-status", "restricted-research",
+            "--metrics", '{"cross_reference_consistency_score": 0.8}',
+            "--bundle-tier-record", str(record),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    result = runner.invoke(
+        app,
+        [
+            "promote", str(ledger),
+            "--profile-id", "op06-093-perona-v2",
+            "--from-state", "adversarial-review-passed",
+            "--to-state", "internal-reference-prototype",
+            "--actor", "Eric Yun", "--actor-type", "human",
+            "--technical-reviewer", "Eric Yun",
+            "--revision", "1", "--lane", "reference",
+            "--reference-bundle-id", "op06-093-perona-v2-en-b001",
+            "--input-hash", HASH,
+            "--source-quality-tier", "B",
+            "--evidence-packet", "docs/agent-ops/evidence-packets/synthetic.json",
+            "--rights-status", "restricted-research",
+            "--metrics", '{"cross_reference_consistency_score": 0.8}',
+            "--adversarial-review", "review/critic/op06-093-perona-v2.json",
+            "--bundle-tier-record", str(record),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    result = runner.invoke(app, ["status", str(ledger), "--profile-id", "op06-093-perona-v2"])
+    assert result.exit_code == 0, result.output
+    assert "internal-reference-prototype" in result.output
