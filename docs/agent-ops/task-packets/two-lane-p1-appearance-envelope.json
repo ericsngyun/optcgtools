@@ -1,0 +1,50 @@
+{
+  "task_id": "two-lane-p1-appearance-envelope",
+  "objective": "Implement appearance-envelope extraction over normalized public-reference images: robust per-region statistics (brightness min/max/variance, chroma variance, hue range and dominant axis, specular activation frequency) and metallic/foil/clearcoat/black-ink-suppression/texture-frequency/direction proposals with per-pixel confidence — labeled observed appearance proposals, never physical BRDF measurements.",
+  "current_state": "Schema frozen by two-lane-p0-state-machine (docs/agent-ops/appearance-envelope.schema.json). material_maps.py exists for the physical lane; this is a separate uncontrolled-reference path and must not claim measurement.",
+  "inputs": [
+    "docs/agent-ops/adr-0002-two-lane-reference-synthesis.md",
+    "docs/agent-ops/appearance-envelope.schema.json"
+  ],
+  "allowed_paths": [
+    "src/optcg_material/appearance_envelope.py",
+    "src/optcg_material/appearance_cli.py",
+    "tests/test_appearance_envelope.py"
+  ],
+  "forbidden_paths": [
+    "src/optcg_material/material_maps.py",
+    "src/optcg_material/material_cli.py",
+    "src/optcg_material/promotion.py",
+    "src/optcg_material/reference_bundle.py",
+    "docs/",
+    "AGENTS.md",
+    "pyproject.toml",
+    "scripts/",
+    "src/lib/"
+  ],
+  "assumptions": [
+    "Inputs are normalized/registered images plus interference masks conforming to the frozen bundle schemas; tests synthesize them.",
+    "Consumes reference_normalize outputs by schema contract only — no import of reference_bundle/reference_normalize modules."
+  ],
+  "acceptance_criteria": [
+    "Statistics use robust estimators (median/MAD or equivalent); an injected single overexposed or manipulated source measurably cannot dominate any envelope value (dedicated test).",
+    "Sleeve/slab interference regions flagged by normalization metadata are excluded from all statistics.",
+    "Specular activation frequency requires evidence from at least two independent sources before a nonzero proposal.",
+    "All outputs carry label 'observed-appearance-proposal' and evidence_state limited to source-supported or inferred; the words measured/human-reviewed never appear in generated outputs.",
+    "Per-pixel confidence map emitted; outlier sources listed with reasons.",
+    "Output validates against the frozen appearance-envelope schema."
+  ],
+  "required_tests": [
+    "uv run pytest tests/test_appearance_envelope.py",
+    "uv run ruff check src tests"
+  ],
+  "stop_conditions": [
+    "The frozen schema cannot express a needed field (report; do not edit schemas).",
+    "Any requirement would need edits outside allowed_paths."
+  ],
+  "expected_outputs": [
+    "appearance_envelope.py + appearance_cli.py (optcg-appearance)",
+    "Robustness, labeling, exclusion, and schema-validation tests"
+  ],
+  "reviewer": "Eric Yun"
+}

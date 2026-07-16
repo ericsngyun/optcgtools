@@ -1,0 +1,47 @@
+{
+  "task_id": "two-lane-p1-segmentation-sam31",
+  "objective": "Upgrade the segmentation backend registry to expose SAM 2.1 baseline, SAM 3.1 challenger, and manual reviewed masks. Verify SAM 3.1 exists in the official Meta (facebookresearch) repository; pin its source revision and checkpoint hash; the backend reports unavailable until pins are verified. Never install a CUDA environment into the MacBook base environment.",
+  "current_state": "segmentation/ package has base.py, registry.py, manual_backend.py, sam2_backend.py, sam3_backend.py placeholder. Whether an official 'SAM 3.1' release exists is unverified.",
+  "inputs": [
+    "docs/agent-ops/adr-0002-two-lane-reference-synthesis.md",
+    "src/optcg_material/segmentation/registry.py"
+  ],
+  "allowed_paths": [
+    "src/optcg_material/segmentation/",
+    "src/optcg_material/semantic.py",
+    "tests/test_segmentation_backends.py"
+  ],
+  "forbidden_paths": [
+    "src/optcg_material/promotion.py",
+    "src/optcg_material/reference_bundle.py",
+    "docs/",
+    "AGENTS.md",
+    "pyproject.toml",
+    "scripts/",
+    "src/lib/"
+  ],
+  "assumptions": [
+    "If no official Meta SAM 3.1 source revision + checkpoint can be verified, ship the unavailable-until-pinned pattern with the verification result documented in the backend docstring, and report it — do not substitute an unofficial fork or invent a pin."
+  ],
+  "acceptance_criteria": [
+    "Registry lists sam2.1 (baseline), sam3.1 (challenger), manual; existing backend behavior unchanged.",
+    "sam3.1 backend refuses to run until a pinned official source revision and checkpoint hash verify; pins recorded in code as constants with provenance comments.",
+    "Backend identity (name, source revision, checkpoint hash) flows into segmentation provenance output.",
+    "No dependency additions to the base environment for CUDA; heavyweight deps remain optional/extra.",
+    "Segmentation remains a semantic-prior producer; no appearance/material claims added."
+  ],
+  "required_tests": [
+    "uv run pytest tests/test_segmentation_backends.py",
+    "uv run ruff check src tests"
+  ],
+  "stop_conditions": [
+    "Official Meta SAM 3.1 cannot be verified (ship placeholder + report; do not improvise).",
+    "Any change would touch pyproject.toml base dependencies or paths outside allowed_paths."
+  ],
+  "expected_outputs": [
+    "Updated registry + sam31 backend (pinned or unavailable-until-pinned)",
+    "Verification note (official repo URL, revision, checkpoint hash or the documented absence)",
+    "Registry/identity/unavailability tests"
+  ],
+  "reviewer": "Eric Yun"
+}
