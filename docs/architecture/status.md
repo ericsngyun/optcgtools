@@ -24,4 +24,8 @@ Snapshot (2026-07-17):
   publication adapter is designed;
 - review workspace UI, CSS profile compiler, GLB export — not implemented;
 - first authenticated physical benchmark card — not yet processed (see
-  `docs/agent-ops/first-benchmark-runbook.md`).
+  `docs/agent-ops/first-benchmark-runbook.md`); NOT required for the current
+  product goal;
+- current product goal (convergence cycle): one internal reference-derived
+  EN Perona OP06-093 alt-art web prototype — Lane A, honest labels, no
+  production card profile exists yet.
