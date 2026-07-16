@@ -27,16 +27,16 @@ def _make_sam2(**kwargs: Any) -> SegmentationBackend:
     return Sam2Backend(settings)
 
 
-def _make_sam3(**_: Any) -> SegmentationBackend:
-    from .sam3_backend import Sam3Backend
+def _make_sam31(**kwargs: Any) -> SegmentationBackend:
+    from .sam31_backend import Sam31Backend
 
-    return Sam3Backend()
+    return Sam31Backend(**kwargs)
 
 
 _FACTORIES: dict[str, Callable[..., SegmentationBackend]] = {
     "manual": _make_manual,
     "sam2.1": _make_sam2,
-    "sam3": _make_sam3,
+    "sam3.1": _make_sam31,
 }
 
 DEFAULT_BACKEND = "sam2.1"

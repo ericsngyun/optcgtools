@@ -40,6 +40,13 @@ class BackendIdentity(BaseModel):
     source_commit: str | None = None
     checkpoint_path: str | None = None
     checkpoint_blake3: str | None = None
+    checkpoint_sha256: str | None = Field(
+        default=None,
+        description=(
+            "Pinned sha256 of the official published checkpoint, when the "
+            "publisher states hashes as sha256 (e.g. Hugging Face LFS oids)."
+        ),
+    )
     device: str | None = None
 
 

@@ -19,21 +19,85 @@ from optcg_material.semantic import (
 )
 
 
-def test_registry_lists_all_backends() -> None:
-    assert available_backends() == ("manual", "sam2.1", "sam3")
+def test_registry_lists_exactly_three_roles() -> None:
+    assert available_backends() == ("manual", "sam2.1", "sam3.1")
 
 
 def test_unknown_backend_rejected() -> None:
     with pytest.raises(KeyError, match="unknown segmentation backend"):
-        create_backend("sam3.1")
+        create_backend("sam3")
 
 
-def test_sam3_is_explicitly_unavailable() -> None:
-    backend = create_backend("sam3")
+def test_sam31_reports_pinned_provenance_identity() -> None:
+    backend = create_backend("sam3.1")
+    identity = backend.identity()
+    assert identity.name == "sam3.1"
+    assert identity.source_repository == "https://github.com/facebookresearch/sam3.git"
+    assert identity.source_commit == "20dba30a35a497606b06cf241f5b5605ea10e77e"
+    assert (
+        identity.checkpoint_sha256
+        == "0567debeec80ba4ac6369540c6c248025283cb3ff2b92827509e57e2b3541cb6"
+    )
+    # identity is the provenance record downstream consumers embed
+    dumped = identity.model_dump()
+    assert dumped["source_commit"] == identity.source_commit
+    assert dumped["checkpoint_sha256"] == identity.checkpoint_sha256
+
+
+def test_sam31_refuses_without_checkpoint(tmp_path: Path) -> None:
+    backend = create_backend(
+        "sam3.1", checkpoint_path=tmp_path / "sam3.1_multiplex.pt"
+    )
     problems = backend.check_environment()
-    assert problems and "verified official source" in problems[0]
-    with pytest.raises(BackendUnavailableError):
-        backend.identity()
+    assert any("missing checkpoint" in problem for problem in problems)
+    request = SegmentationRequest(
+        run_id="sam31-run-001",
+        session_id="op05-119-luffy-en-001",
+        mode="image",
+        source_path="processed/frame.png",
+        prompts=[
+            RegionPrompt(
+                region_id="character",
+                semantic_region=SemanticRegion.CHARACTER,
+                points=[{"x": 1, "y": 1}],
+            )
+        ],
+    )
+    with pytest.raises(BackendUnavailableError, match="missing checkpoint"):
+        backend.segment_image(tmp_path, request)
+    with pytest.raises(BackendUnavailableError, match="missing checkpoint"):
+        backend.propagate_video(tmp_path, request)
+
+
+def test_sam31_refuses_on_checkpoint_hash_mismatch(tmp_path: Path) -> None:
+    fake_checkpoint = tmp_path / "sam3.1_multiplex.pt"
+    fake_checkpoint.write_bytes(b"not the official sam3.1 checkpoint")
+    backend = create_backend("sam3.1", checkpoint_path=fake_checkpoint)
+    problems = backend.check_environment()
+    assert any("checkpoint hash mismatch" in problem for problem in problems)
+    assert any("checkpoint size mismatch" in problem for problem in problems)
+    request = SegmentationRequest(
+        run_id="sam31-run-002",
+        session_id="op05-119-luffy-en-001",
+        mode="image",
+        source_path="processed/frame.png",
+        prompts=[
+            RegionPrompt(
+                region_id="character",
+                semantic_region=SemanticRegion.CHARACTER,
+                points=[{"x": 1, "y": 1}],
+            )
+        ],
+    )
+    with pytest.raises(BackendUnavailableError, match="checkpoint hash mismatch"):
+        backend.segment_image(tmp_path, request)
+
+
+def test_sam31_never_claims_availability_in_base_environment() -> None:
+    backend = create_backend("sam3.1")
+    assert backend.capabilities().requires_gpu
+    assert not backend.capabilities().authoritative_for_approval
+    assert backend.check_environment()  # never empty in the base environment
 
 
 def test_manual_backend_is_authoritative_and_roundtrips(tmp_path: Path) -> None:
