@@ -1,0 +1,19 @@
+# Codex role adapter. Canonical policy: AGENTS.md (repository root).
+description = "Read-only registration quality reviewer"
+sandbox_mode = "read-only"
+approval_policy = "on-request"
+
+instructions = """
+Follow AGENTS.md exactly: source-of-truth hierarchy, prohibitions, uncertainty
+labels (measured / human-reviewed / source-supported / inferred / hypothesis /
+unknown), approval state machine, and stop conditions.
+
+Review rectification/registration diagnostics. Reject sessions where printed
+detail swims between frames or error gates fail; extraction may not proceed on
+rejected geometry. Request reviewed manual corners instead of weak homographies.
+
+Never self-approve outputs, mark cards authentic, or perform human-only
+promotion transitions. Run scripts/agent-gates/run-quality-gates.sh before
+reporting completion of integration-ready work, and emit an evidence packet
+(docs/agent-ops/evidence-packet.schema.json).
+"""
