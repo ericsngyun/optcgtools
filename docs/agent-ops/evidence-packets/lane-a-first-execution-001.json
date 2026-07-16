@@ -1,0 +1,109 @@
+{
+  "task_id": "perona-en-aa-reference-bundle-v1",
+  "run_id": "lane-a-first-execution-001",
+  "repository_commit": "3cdec96d7a0e31ab76cf2f43e0fd5bf3f0f8cdef",
+  "agent": "lead",
+  "agent_tool": "claude-code",
+  "model": "claude-fable-5",
+  "lane": "reference",
+  "environment": {
+    "platform": "darwin",
+    "python": "3.12",
+    "node": "22",
+    "lockfiles_frozen": true
+  },
+  "source_session": "none-reference-lane",
+  "authentication_state": "not-applicable",
+  "rights_state": "restricted-research",
+  "commands_run": [
+    "optcg-reference init-bundle/add-source/add-media/score/tier/validate (EN + JP bundles)",
+    "optcg-promote open-revision --lane reference (both bundles, entry at hypothesis)",
+    "optcg-reference-normalize run (auto + reviewed manual quads)",
+    "optcg-appearance extract (JP bundle, 3 registered sources)",
+    "optcg-reference-fit fit (JP bundle, two albedo strategies)",
+    "scripts/agent-gates/run-quality-gates.sh"
+  ],
+  "tests": [
+    {
+      "command": "scripts/agent-gates/run-quality-gates.sh",
+      "result": "pass",
+      "detail": "202 python + 7 web tests green at holo-lab merge 3cdec96 before execution"
+    },
+    {
+      "command": "optcg-reference validate (both bundles)",
+      "result": "pass",
+      "detail": "manifest digests, media hashes, blocked-source acquisition tasks, tier consistency all valid"
+    }
+  ],
+  "visual_checks": [
+    {
+      "description": "Exact-variant pixel verification of every acquired image (EN photo: English text, OP06-093, full-art, Koushi Rokushiro credit, no prize stamp; JP set: JP text, same parallel artwork); manual corner-quad overlays visually reviewed before use; two auto-quads rejected on inspection",
+      "result": "pass"
+    }
+  ],
+  "artifacts": [
+    "docs/agent-ops/evidence-packets/lane-a-first-execution-001.json",
+    "docs/architecture/status.md"
+  ],
+  "observations": [
+    {
+      "statement": "Two private Lane A bundles exist (EN and JP Perona OP06-093 alternate art), each with an append-only promotion ledger opened at hypothesis, hash-recorded media, and manifests whose digest, hash, task, and tier checks all pass; all media and diagnostics remain outside the repository.",
+      "evidence_state": "source-supported",
+      "source": "optcg-reference validate output, private bundle storage"
+    },
+    {
+      "statement": "The EN bundle holds 14 sources (12 blocked with human acquisition tasks, 1 official canonical scan, 1 pixel-verified raw EN seller photo) and is Tier C: one photo from one seller cannot carry a bundle.",
+      "evidence_state": "source-supported",
+      "source": "EN bundle tier record"
+    },
+    {
+      "statement": "The JP bundle registered 3 of 11 seller photos (one via reviewed manual quad: 658 inliers, 0.91px reprojection); steep-tilt, occluded, and cornerless macro inputs were rejected rather than forced.",
+      "evidence_state": "source-supported",
+      "source": "JP bundle normalization diagnostics"
+    },
+    {
+      "statement": "The JP appearance envelope produced schema-valid observed-appearance proposals with confidences 0.39-0.58; the two-source specular agreement rule correctly returned zero activation for photos lit from different positions.",
+      "evidence_state": "source-supported",
+      "source": "JP bundle appearance envelope + diagnostics sidecar"
+    },
+    {
+      "statement": "Both JP fitting attempts were rejected by coded gates: the watermarked-scan albedo triggered the renderer-model-limit diagnostic (aggregate loss 0.361), and the median-of-photos albedo improved to 0.229 but failed the acceptance gate (0 sources at accept threshold, consistency 0.021 below the 0.35 floor). No profile was accepted; no threshold was tuned to force acceptance.",
+      "evidence_state": "source-supported",
+      "source": "JP bundle fit-001/fit-002 reports"
+    },
+    {
+      "statement": "All three registered JP sources scored 0.499 against the 0.50 Tier-B floor; per-source scoring does not aggregate cross-source angle diversity.",
+      "evidence_state": "source-supported",
+      "source": "JP bundle source scores"
+    }
+  ],
+  "inferences": [
+    {
+      "statement": "The dominant fit-rejection causes are three inconsistent unknown lighting setups, compression, and albedo contamination; a single-session tilt video or one-lighting multi-angle set is the highest-leverage acquisition for either bundle.",
+      "evidence_state": "inferred"
+    },
+    {
+      "statement": "The 0.499-vs-0.50 tier outcome and the zero specular activation on small heterogeneous sets are threshold-calibration questions for the reviewer, not code defects.",
+      "evidence_state": "inferred"
+    }
+  ],
+  "known_failures": [
+    "JP reference fit rejected twice by design gates (model-limit, then acceptance gate) — recorded outcome, not silently retried",
+    "Two subagent runs terminated by upstream API overload; the pipeline was completed inline by the lead session",
+    "Semantic proposals deferred: SAM 2.1 checkpoint not installed and the only clean art carries a database watermark",
+    "Adversarial critic not invoked: no accepted profile exists to disprove"
+  ],
+  "unresolved_questions": [
+    "Tier-B floor calibration (0.50) vs per-source single-angle penalty on multi-angle bundles",
+    "Whether to promote holo-lab into main (operator decision pending; standing instruction forbids it)",
+    "Bundle-review publication adapter design (reference publication remains fail-closed)",
+    "JP batch-to-listing attribution inferred from operator message order; awaiting operator confirmation"
+  ],
+  "recommended_state_transition": {
+    "profile_id": "op06-093-perona-en-aa-v1",
+    "to_state": "hypothesis",
+    "justification": "Both bundles remain at hypothesis: exact-variant-verified is a human-only transition and no bundle has reached an eligible tier; no advancement is proposed."
+  },
+  "human_approval_required": true,
+  "reviewer": "Eric Yun"
+}
