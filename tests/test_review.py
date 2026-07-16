@@ -360,3 +360,130 @@ def test_publication_blocks_hypothesis_confidence(tmp_path: Path) -> None:
     report = check_publication(tmp_path, profile_path, SCHEMA_PATH)
     assert not report.passed
     assert any("below capture-validated" in error for error in report.errors)
+
+
+# ---------------------------------------------------------------------------
+# Lane A (reference) publication gate — ADR-0002
+# ---------------------------------------------------------------------------
+
+
+def write_reference_schema(root: Path) -> Path:
+    """A minimal Draft 2020-12 schema permitting the `lane` field: the shared
+    card-material-profile.schema.json is out of this task's allowed_paths, so
+    reference-lane tests validate against a synthetic reference schema."""
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": ["schemaVersion", "lane", "card", "classification", "assets", "renderer", "provenance"],
+        "properties": {
+            "schemaVersion": {"type": "string"},
+            "lane": {"const": "reference"},
+            "card": {"type": "object"},
+            "classification": {"type": "object"},
+            "assets": {"type": "object"},
+            "renderer": {"type": "object"},
+            "provenance": {"type": "object"},
+        },
+        "additionalProperties": True,
+    }
+    schema_path = root / "reference-profile.schema.json"
+    schema_path.write_text(json.dumps(schema), encoding="utf-8")
+    return schema_path
+
+
+def write_reference_profile(
+    root: Path,
+    *,
+    confidence: str,
+    rights_note: str = "GenkiStuff licensed reference bundle",
+    asset_relative: str = "approved/albedo.png",
+) -> Path:
+    asset_path = root / "delivery" / asset_relative
+    asset_path.parent.mkdir(parents=True, exist_ok=True)
+    asset_path.write_bytes(b"synthetic-albedo-bytes")
+    profile = {
+        "schemaVersion": "1.0.0",
+        "lane": "reference",
+        "card": {"id": "OP05-119", "game": "one-piece-card-game", "language": "EN"},
+        "classification": {"family": "sr-foil-basic", "confidence": confidence},
+        "assets": {
+            "albedo": {
+                "uri": asset_relative,
+                "sha256": hashlib.sha256(b"synthetic-albedo-bytes").hexdigest(),
+            }
+        },
+        "renderer": {"cssPreset": "sr-foil-basic", "qualityTier": "detail"},
+        "provenance": {
+            "sourceType": "public-reference-synthesis",
+            "rights": rights_note,
+            "reviewStatus": "approved",
+            "reviewer": REVIEWER,
+        },
+    }
+    profile_path = root / "delivery" / "reference-profile.json"
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    return profile_path
+
+
+def test_reference_publication_passes_with_allowed_label(tmp_path: Path) -> None:
+    create_session(tmp_path)
+    mark_authenticated(tmp_path)
+    schema_path = write_reference_schema(tmp_path)
+    profile_path = write_reference_profile(tmp_path, confidence="reference-derived")
+    approve_everything(tmp_path, profile_digest=sha256_of(profile_path))
+
+    report = check_publication(tmp_path, profile_path, schema_path)
+    assert report.passed, report.errors
+    assert report.errors == []
+
+
+@pytest.mark.parametrize(
+    "confidence",
+    [
+        "source-supported simulation",
+        "visually fitted across real-card references",
+    ],
+)
+def test_reference_publication_passes_for_every_allowed_label(
+    tmp_path: Path, confidence: str
+) -> None:
+    create_session(tmp_path)
+    mark_authenticated(tmp_path)
+    schema_path = write_reference_schema(tmp_path)
+    profile_path = write_reference_profile(tmp_path, confidence=confidence)
+    approve_everything(tmp_path, profile_digest=sha256_of(profile_path))
+
+    report = check_publication(tmp_path, profile_path, schema_path)
+    assert report.passed, report.errors
+
+
+def test_reference_publication_rejects_physical_confidence_label(tmp_path: Path) -> None:
+    create_session(tmp_path)
+    mark_authenticated(tmp_path)
+    schema_path = write_reference_schema(tmp_path)
+    profile_path = write_reference_profile(tmp_path, confidence="capture-validated")
+    approve_everything(tmp_path, profile_digest=sha256_of(profile_path))
+
+    report = check_publication(tmp_path, profile_path, schema_path)
+    assert not report.passed
+    assert any("reference-lane publication label" in error for error in report.errors)
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    ["capture-validated", "physically measured", "physically exact"],
+)
+def test_reference_publication_rejects_forbidden_phrases(tmp_path: Path, phrase: str) -> None:
+    create_session(tmp_path)
+    mark_authenticated(tmp_path)
+    schema_path = write_reference_schema(tmp_path)
+    profile_path = write_reference_profile(
+        tmp_path,
+        confidence="reference-derived",
+        rights_note=f"GenkiStuff licensed reference bundle; {phrase} appearance match",
+    )
+    approve_everything(tmp_path, profile_digest=sha256_of(profile_path))
+
+    report = check_publication(tmp_path, profile_path, schema_path)
+    assert not report.passed
+    assert any("forbidden physical-claim phrase" in error for error in report.errors)
