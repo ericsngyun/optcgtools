@@ -1,7 +1,7 @@
 """``optcg-reference`` — Lane A public-reference bundle CLI (ADR-0002).
 
 Verbs: init-bundle, verify-variant, add-source, add-media, acquisition-task,
-score, tier, validate. There is intentionally no fetch/download verb: agents
+score, coverage, tier, validate. There is intentionally no fetch/download verb: agents
 never retrieve marketplace media and never automate around anti-bot controls;
 blocked retrievals become human acquisition tasks.
 """
@@ -35,6 +35,7 @@ from .reference_bundle import (
     SourceType,
     add_media,
     add_source,
+    coverage_bundle,
     create_acquisition_task,
     init_bundle,
     list_acquisition_tasks,
@@ -287,6 +288,30 @@ def score_command(
             score.tier_rationale,
         )
     console.print(table)
+
+
+@app.command("coverage")
+def coverage_command(
+    bundle_root: BundleRootArgument,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Compute bundle-level coverage and persist review/bundle-coverage.json."""
+    try:
+        record = coverage_bundle(bundle_root)
+    except (BundleError, ValidationError) as exc:
+        _fail(str(exc))
+    if json_output:
+        console.print_json(record.model_dump_json(exclude_none=True))
+        return
+    table = Table("Axis", "Score", "Rationale")
+    for name, axis in record.axes.items():
+        table.add_row(name, f"{axis.score:.4f}", axis.rationale)
+    console.print(table)
+    console.print(f"coverage composite: [bold]{record.composite:.4f}[/bold]")
+    route = record.multi_angle_route
+    status = "satisfied" if route.satisfied else "NOT satisfied"
+    console.print(f"multi-angle reviewed-B route: [bold]{status}[/bold]")
+    console.print(route.rationale)
 
 
 @app.command("tier")
