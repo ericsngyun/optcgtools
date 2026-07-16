@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from gate_common import (  # noqa: E402
+from gate_common import (
     normalize,
     private_media_violation,
     repo_root,
@@ -30,7 +30,21 @@ from gate_common import (  # noqa: E402
 # directories live outside the repo and must never be committed — treated
 # the same way raw-captures/ is.
 REFERENCE_BUNDLE_PRIVATE_PREFIXES = ("public-reference-bundles/",)
-REFERENCE_BUNDLE_PRIVATE_SEGMENTS = frozenset({"private-media", "normalized", "registered"})
+REFERENCE_BUNDLE_PRIVATE_SEGMENTS = frozenset(
+    {
+        "private-media",
+        "normalized",
+        "registered",
+        # Full ADR-0002 bundle layout: diagnostics embed private card imagery
+        # (e.g. interference overlays), so every bundle directory is blocked by
+        # name, not only by the raster/video extension backstop.
+        "appearance",
+        "semantic",
+        "diagnostics",
+        "renders",
+        "sources",
+    }
+)
 
 
 def reference_bundle_private_root_violation(path: str) -> str | None:

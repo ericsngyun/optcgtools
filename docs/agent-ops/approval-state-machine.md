@@ -63,6 +63,15 @@ defense against a deliberately malicious actor with repository write access:
   directories must therefore live under an `approved/` segment (e.g.
   `public/approved/…`); a digest manifest of approved assets is the planned
   stronger replacement.
+- `source_quality_tier` on a promotion event is a self-declared letter, like
+  `actor_type`: the promotion library validates only `A|B` vs `C`. The binding
+  of a declared tier to the bundle's computed, fail-closed `BundleTierRecord`
+  (including the tier-B human-review requirement) happens in `optcg-promote`
+  (`--bundle-tier-record`), not in the library — CI replays ledgers without
+  access to private bundles. Direct library callers can self-declare a tier;
+  the bracketing human-only gates (`exact-variant-verified` below,
+  `adversarial-review-passed` above) and PR review are the containment,
+  matching the existing self-declared `actor_type` model.
 - The misleading-language gate is a lint, not a proof: it matches word stems
   and can be evaded by paraphrase. The human review ladder is the real gate.
 - Client-side hooks (`.claude/settings.json`) are advisory for indirect
@@ -92,12 +101,17 @@ hypothesis
 - **Thresholds:** `reference_bundle_id` required from `exact-variant-verified`;
   `input_hashes` and `reference_bundle_id` (which stands in for
   `source_session` — the reference lane has no capture session) from
-  `public-reference-supported`; `source_quality_tier` (`A`, or `B` only with
-  recorded human review; `C` is never eligible), an evidence packet, and a
-  resolved `rights_status` from `reference-assets-proposed`; quantitative
-  `metrics` from `reference-profile-fitted`; a named `technical_reviewer` on
-  every human-only target; a named `rights_reviewer` additionally at
-  `production-reference-derived`.
+  `public-reference-supported`; `source_quality_tier` in `{A, B}` (`C` is
+  rejected at any rank), an evidence packet, and a resolved `rights_status`
+  from `reference-assets-proposed`; quantitative `metrics` from
+  `reference-profile-fitted`; a named `technical_reviewer` on every human-only
+  target; a named `rights_reviewer` additionally at
+  `production-reference-derived`. The tier-B human-review requirement lives in
+  the bundle's `BundleTierRecord` (fail-closed in
+  `reference_bundle.py`); `optcg-promote promote` binds the declared ledger
+  tier to that record via `--bundle-tier-record` (required whenever a
+  reference-lane event declares a tier). The promotion *library* verifies only
+  the letter — see the threat-model note below.
 - **Lane immutability.** `lane` is fixed at `open-revision` and is part of
   revision identity. Every later event on that revision — including a
   demotion — must match it; a differing lane is rejected. Cross-lane

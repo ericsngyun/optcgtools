@@ -22,6 +22,7 @@ from .promotion import (
     load_promotion_ledger,
     new_event_id,
 )
+from .reference_bundle import BundleTierRecord
 
 app = typer.Typer(
     name="optcg-promote",
@@ -58,6 +59,47 @@ def _parse_json_option(raw: str | None, option: str) -> dict:
     if not isinstance(parsed, dict):
         _fail(f"{option} must be a JSON object")
     return parsed
+
+
+def _verify_bundle_tier_record(
+    tier: str | None,
+    reference_bundle_id: str | None,
+    record_path: Path | None,
+) -> None:
+    """Bind a declared ledger tier to the bundle's computed tier record.
+
+    The promotion library stays IO-pure (CI replays ledgers without access to
+    private bundles), so this operator-side check is where a self-declared
+    `--source-quality-tier` is verified against `optcg-reference tier` output —
+    including the fail-closed tier-B human-review requirement encoded in
+    BundleTierRecord itself. Direct library callers can still self-declare;
+    that residual is documented in the approval-state-machine threat model.
+    """
+    if tier is None:
+        return
+    if record_path is None:
+        _fail(
+            "--bundle-tier-record is required when declaring --source-quality-tier "
+            "on a reference-lane event (produce it with `optcg-reference tier`)"
+        )
+        return
+    try:
+        record = BundleTierRecord.model_validate_json(record_path.read_text(encoding="utf-8"))
+    except (OSError, ValidationError, ValueError) as exc:
+        _fail(f"unreadable or invalid bundle tier record {record_path}: {exc}")
+        return
+    if reference_bundle_id and record.bundle_id != reference_bundle_id:
+        _fail(
+            f"tier record bundle_id '{record.bundle_id}' does not match "
+            f"--reference-bundle-id '{reference_bundle_id}'"
+        )
+    if record.tier.value != tier:
+        _fail(f"declared tier '{tier}' does not match computed tier '{record.tier.value}'")
+    if not record.eligible_for_profile:
+        _fail(
+            f"bundle '{record.bundle_id}' is not eligible for a profile at tier "
+            f"'{record.tier.value}' (tier C, or tier B without a recorded human review)"
+        )
 
 
 def _append(ledger: Path, **fields) -> None:
@@ -156,10 +198,20 @@ def promote_command(
     linked_reference_revision: Annotated[
         int | None, typer.Option("--linked-reference-revision")
     ] = None,
+    bundle_tier_record: Annotated[
+        Path | None,
+        typer.Option(
+            "--bundle-tier-record",
+            help="BundleTierRecord JSON from `optcg-reference tier`; required when "
+            "declaring --source-quality-tier on a reference-lane event",
+        ),
+    ] = None,
     reason: Annotated[str | None, typer.Option("--reason")] = None,
 ) -> None:
     """Advance one state. Review transitions require --actor-type human and a named reviewer."""
     raw_metrics = _parse_json_option(metrics, "--metrics")
+    if lane is Lane.REFERENCE:
+        _verify_bundle_tier_record(source_quality_tier, reference_bundle_id, bundle_tier_record)
     _append(
         ledger,
         profile_id=profile_id,

@@ -21,6 +21,7 @@ Outputs are written alongside originals; both are retained and hashed.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -42,6 +43,7 @@ from .provenance import hash_file
 from .quality import read_image
 from .reference_bundle import (
     NORMALIZE_DIAGNOSTICS_DIRECTORY,
+    SLUG_PATTERN,
     BundleError,
     MediaForm,
     Protection,
@@ -494,6 +496,8 @@ def normalize_bundle(
 
 
 def load_normalization_record(bundle_root: Path, source_id: str) -> NormalizationRecord:
+    if not re.fullmatch(SLUG_PATTERN, source_id):
+        raise NormalizeError(f"invalid source_id: {source_id!r}")
     path = bundle_root / NORMALIZE_DIAGNOSTICS_DIRECTORY / f"{source_id}.json"
     if not path.is_file():
         raise NormalizeError(f"no normalization record for source: {source_id}")
