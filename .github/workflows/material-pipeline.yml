@@ -2,9 +2,9 @@ name: Material pipeline
 
 on:
   push:
-    branches: [holo-lab]
+    branches: [holo-lab, "feat/**"]
   pull_request:
-    branches: [main]
+    branches: [main, holo-lab]
 
 permissions:
   contents: read
@@ -14,6 +14,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  agent-gates:
+    name: Agent anti-slop gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Block private or unlicensed media
+        run: python3 scripts/agent-gates/check-private-media.py --scan
+
+      - name: Block committed generated artifacts
+        run: git ls-files -z | xargs -0 python3 scripts/agent-gates/check-generated-artifacts.py
+
+      - name: Approved assets are append-only (PR diff)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=200 origin "$BASE_REF"
+          git diff --name-status -M "origin/$BASE_REF...HEAD" \
+            | python3 scripts/agent-gates/check-approved-assets.py --diff-stdin
+
   python:
     name: Python capture pipeline
     runs-on: ubuntu-latest
@@ -59,6 +84,24 @@ jobs:
       - name: Test
         run: uv run pytest --cov=optcg_material --cov-report=term-missing
 
+      - name: Validate tracked promotion ledgers
+        run: |
+          files=$(git ls-files '*promotion-log*.jsonl' '*promotions*.jsonl')
+          if [ -n "$files" ]; then
+            uv run python scripts/agent-gates/check-profile-promotion.py $files
+          else
+            echo "no tracked promotion ledgers"
+          fi
+
+      - name: Validate tracked evidence packets
+        run: |
+          files=$(git ls-files '*evidence-packet*.json' 'evidence-packets/*.json' | grep -v '\.schema\.json$' || true)
+          if [ -n "$files" ]; then
+            uv run python scripts/agent-gates/check-evidence-packet.py $files
+          else
+            echo "no tracked evidence packets"
+          fi
+
   web:
     name: Holo lab browser and build
     runs-on: ubuntu-latest
@@ -76,7 +119,7 @@ jobs:
           package-manager-cache: false
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium

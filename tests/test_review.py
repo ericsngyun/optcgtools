@@ -53,7 +53,7 @@ def mark_authenticated(root: Path, *, public_derivatives: bool = True) -> None:
     save_manifest(root, session)
 
 
-def approve_everything(root: Path) -> None:
+def approve_everything(root: Path, profile_digest: str | None = None) -> None:
     for item in TECHNICAL_ITEMS:
         append_event(root, reviewer=REVIEWER, action=ReviewAction.APPROVE_ITEM, item=item)
     append_event(root, reviewer=REVIEWER, action=ReviewAction.APPROVE_ITEM, item=ReviewItem.RIGHTS)
@@ -65,7 +65,16 @@ def approve_everything(root: Path) -> None:
     )
     append_event(root, reviewer=REVIEWER, action=ReviewAction.APPROVE_TECHNICAL)
     append_event(root, reviewer=REVIEWER, action=ReviewAction.APPROVE_RIGHTS)
-    append_event(root, reviewer=REVIEWER, action=ReviewAction.APPROVE_PRODUCTION)
+    append_event(
+        root,
+        reviewer=REVIEWER,
+        action=ReviewAction.APPROVE_PRODUCTION,
+        after_digest=profile_digest,
+    )
+
+
+def sha256_of(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def write_profile(root: Path, asset_relative: str = "approved/albedo.png") -> Path:
@@ -260,8 +269,8 @@ def test_publication_blocked_without_production_approval(tmp_path: Path) -> None
 def test_publication_passes_when_all_gates_hold(tmp_path: Path) -> None:
     create_session(tmp_path)
     mark_authenticated(tmp_path)
-    approve_everything(tmp_path)
     profile_path = write_profile(tmp_path)
+    approve_everything(tmp_path, profile_digest=sha256_of(profile_path))
 
     report = check_publication(tmp_path, profile_path, SCHEMA_PATH)
     assert report.errors == []
@@ -270,16 +279,56 @@ def test_publication_passes_when_all_gates_hold(tmp_path: Path) -> None:
     assert "albedo" in report.checked_assets
 
 
+def test_publication_blocks_profile_swapped_after_approval(tmp_path: Path) -> None:
+    create_session(tmp_path)
+    mark_authenticated(tmp_path)
+    profile_path = write_profile(tmp_path)
+    approve_everything(tmp_path, profile_digest=sha256_of(profile_path))
+
+    profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    profile["renderer"]["foilStrength"] = 2.0
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+
+    report = check_publication(tmp_path, profile_path, SCHEMA_PATH)
+    assert not report.passed
+    assert any("does not match the reviewed profile" in error for error in report.errors)
+
+
+def test_publication_requires_digest_bound_approval(tmp_path: Path) -> None:
+    create_session(tmp_path)
+    mark_authenticated(tmp_path)
+    profile_path = write_profile(tmp_path)
+    approve_everything(tmp_path, profile_digest=None)
+
+    report = check_publication(tmp_path, profile_path, SCHEMA_PATH)
+    assert not report.passed
+    assert any("must record the approved profile's sha256" in error for error in report.errors)
+
+
+def test_publication_blocks_remote_assets_by_default(tmp_path: Path) -> None:
+    create_session(tmp_path)
+    mark_authenticated(tmp_path)
+    profile_path = write_profile(tmp_path)
+    profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    profile["assets"]["foilMask"] = {"uri": "https://cdn.example.com/foil.webp"}
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    approve_everything(tmp_path, profile_digest=sha256_of(profile_path))
+
+    report = check_publication(tmp_path, profile_path, SCHEMA_PATH)
+    assert not report.passed
+    assert any("remote URI" in error for error in report.errors)
+
+
 def test_publication_blocks_hash_mismatch_and_raw_paths(tmp_path: Path) -> None:
     create_session(tmp_path)
     mark_authenticated(tmp_path)
-    approve_everything(tmp_path)
     profile_path = write_profile(tmp_path)
 
     profile = json.loads(profile_path.read_text(encoding="utf-8"))
     profile["assets"]["albedo"]["sha256"] = "0" * 64
     profile["assets"]["foilMask"] = {"uri": "raw/albedo/secret.png"}
     profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    approve_everything(tmp_path, profile_digest=sha256_of(profile_path))
 
     report = check_publication(tmp_path, profile_path, SCHEMA_PATH)
     assert not report.passed
@@ -290,8 +339,8 @@ def test_publication_blocks_hash_mismatch_and_raw_paths(tmp_path: Path) -> None:
 def test_publication_blocks_missing_rights(tmp_path: Path) -> None:
     create_session(tmp_path)
     mark_authenticated(tmp_path, public_derivatives=False)
-    approve_everything(tmp_path)
     profile_path = write_profile(tmp_path)
+    approve_everything(tmp_path, profile_digest=sha256_of(profile_path))
 
     report = check_publication(tmp_path, profile_path, SCHEMA_PATH)
     assert not report.passed
@@ -301,12 +350,12 @@ def test_publication_blocks_missing_rights(tmp_path: Path) -> None:
 def test_publication_blocks_hypothesis_confidence(tmp_path: Path) -> None:
     create_session(tmp_path)
     mark_authenticated(tmp_path)
-    approve_everything(tmp_path)
     profile_path = write_profile(tmp_path)
 
     profile = json.loads(profile_path.read_text(encoding="utf-8"))
     profile["classification"]["confidence"] = "hypothesis"
     profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    approve_everything(tmp_path, profile_digest=sha256_of(profile_path))
 
     report = check_publication(tmp_path, profile_path, SCHEMA_PATH)
     assert not report.passed

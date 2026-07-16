@@ -179,6 +179,13 @@ def approve_rights_command(
 def approve_production_command(
     session_root: SessionArgument,
     reviewer: ReviewerOption,
+    profile_digest: Annotated[
+        str,
+        typer.Option(
+            "--profile-digest",
+            help="sha256 of the exact profile JSON being approved; binds publication to it",
+        ),
+    ],
     profile_version: Annotated[str | None, typer.Option("--profile-version")] = None,
     comment: Annotated[str | None, typer.Option("--comment")] = None,
 ) -> None:
@@ -189,6 +196,7 @@ def approve_production_command(
         action=ReviewAction.APPROVE_PRODUCTION,
         profile_version=profile_version,
         comment=comment,
+        after_digest=profile_digest,
     )
 
 
@@ -278,9 +286,18 @@ def check_publish_command(
     schema: Annotated[Path, typer.Option("--schema")] = DEFAULT_SCHEMA_PATH,
     assets_root: Annotated[Path | None, typer.Option("--assets-root")] = None,
     report_path: Annotated[Path | None, typer.Option("--report", help="Write the JSON report here")] = None,
+    allow_remote_assets: Annotated[
+        bool, typer.Option("--allow-remote-assets", help="Only for already-deployed CDN manifests")
+    ] = False,
 ) -> None:
     """Run every publication gate; exit non-zero when any gate fails."""
-    report = check_publication(session_root, profile, schema, assets_root=assets_root)
+    report = check_publication(
+        session_root,
+        profile,
+        schema,
+        assets_root=assets_root,
+        allow_remote_assets=allow_remote_assets,
+    )
 
     if report_path is not None:
         report_path.parent.mkdir(parents=True, exist_ok=True)

@@ -437,12 +437,15 @@ def check_publication(
     schema_path: Path,
     *,
     assets_root: Path | None = None,
+    allow_remote_assets: bool = False,
 ) -> PublicationReport:
     errors: list[str] = []
     warnings: list[str] = []
     checked_assets: dict[str, str] = {}
     state = ReviewState.UNREVIEWED
     head_digest: str | None = None
+    approved_profile_digest: str | None = None
+    events: list[ReviewEvent] = []
 
     try:
         events = load_ledger(session_root)
@@ -451,6 +454,21 @@ def check_publication(
         head_digest = status.head_digest
         if state is not ReviewState.PRODUCTION_APPROVED:
             errors.append(f"review state is '{state}', publication requires 'production-approved'")
+        else:
+            production = next(
+                record
+                for record in status.approvals
+                if record.action is ReviewAction.APPROVE_PRODUCTION and record.active
+            )
+            approval_event = next(
+                event for event in events if event.event_id == production.event_id
+            )
+            approved_profile_digest = approval_event.after_digest
+            if approved_profile_digest is None:
+                errors.append(
+                    "production approval must record the approved profile's sha256 as "
+                    "after_digest so publication is bound to the reviewed profile"
+                )
     except (ReviewError, OSError) as exc:
         errors.append(f"review ledger failed verification: {exc}")
 
@@ -473,6 +491,16 @@ def check_publication(
         profile_digest = hashlib.sha256(raw.encode()).hexdigest()
     except (OSError, json.JSONDecodeError) as exc:
         errors.append(f"profile failed to load: {exc}")
+
+    if (
+        profile_digest is not None
+        and approved_profile_digest is not None
+        and profile_digest != approved_profile_digest
+    ):
+        errors.append(
+            "profile does not match the reviewed profile: production approval recorded "
+            f"{approved_profile_digest}, candidate is {profile_digest}"
+        )
 
     if profile is not None:
         try:
@@ -504,7 +532,14 @@ def check_publication(
                 errors.append(f"asset '{name}' points outside approved delivery paths: {uri}")
                 continue
             if "://" in uri or uri.startswith("//"):
-                warnings.append(f"asset '{name}' is remote; hash not verified locally: {uri}")
+                if allow_remote_assets:
+                    warnings.append(f"asset '{name}' is remote; hash not verified locally: {uri}")
+                else:
+                    errors.append(
+                        f"asset '{name}' is a remote URI; publication verifies local content "
+                        f"hashes (pass allow_remote_assets only for already-deployed CDN "
+                        f"manifests): {uri}"
+                    )
                 continue
             expected = asset.get("sha256")
             if expected is None:
