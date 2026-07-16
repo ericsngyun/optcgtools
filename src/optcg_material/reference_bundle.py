@@ -35,6 +35,7 @@ import shutil
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 from blake3 import blake3
@@ -49,6 +50,7 @@ URLS_FILENAME = "urls.json"
 ACQUISITION_TASKS_DIRECTORY = "sources/acquisition-tasks"
 SOURCE_SCORES_FILENAME = "diagnostics/source-scores.json"
 BUNDLE_TIER_FILENAME = "review/bundle-tier.json"
+BUNDLE_COVERAGE_FILENAME = "review/bundle-coverage.json"
 NORMALIZE_DIAGNOSTICS_DIRECTORY = "diagnostics/normalize"
 
 SLUG_PATTERN = r"^[a-z0-9][a-z0-9._-]{1,95}$"
@@ -818,6 +820,432 @@ def score_bundle_sources(
     return scores
 
 
+# --- bundle coverage ---------------------------------------------------------------
+#
+# Bundle-level coverage scores what the bundle proves *as a whole*, alongside
+# (never replacing) per-source quality scoring. The record is a NEW artifact
+# (``review/bundle-coverage.json``) with the documented structure below; the
+# frozen reference-source-quality schema is not touched.
+#
+# Guardrails (both directions):
+#
+# - No weak-source promotion: coverage never changes any SourceQualityScore,
+#   and a source below the per-route floors (failed/absent registration,
+#   variant confidence < 0.9, high proxy risk, high editing likelihood)
+#   contributes nothing to the multi-angle route.
+# - No single-view-only rejection: a coherent bundle of >=3 registered
+#   single-view sources spanning >=3 distinct angles may reach reviewed
+#   tier-B eligibility even though each frame alone carries the single-angle
+#   penalty. Human review is still required for tier B; tier A is unchanged.
+
+COVERAGE_RECORD_VERSION = "1.0.0"
+
+# Marker a human reviewer places in review_notes when seller/listing
+# attribution cannot be established. All such sources collapse into ONE
+# independent-source family (they could all be the same actor).
+PROVENANCE_UNKNOWN_MARKER = "PROVENANCE UNKNOWN"
+
+# Optional human-recorded viewing-angle marker in review_notes, e.g.
+# ``ANGLE: tilt-left``. Diagnostics pose metadata takes precedence.
+ANGLE_MARKER_PREFIX = "ANGLE:"
+
+COVERAGE_AXES: tuple[str, ...] = (
+    "temporal_sequence",
+    "angle_span",
+    "lighting_consistency",
+    "macro_coverage",
+    "independent_sources",
+    "variant_confidence",
+    "interference_diversity",
+)
+
+# Documented coverage weights; they sum to 1.0.
+DEFAULT_COVERAGE_WEIGHTS: dict[str, float] = {
+    "temporal_sequence": 0.10,
+    "angle_span": 0.20,
+    "lighting_consistency": 0.15,
+    "macro_coverage": 0.10,
+    "independent_sources": 0.15,
+    "variant_confidence": 0.20,
+    "interference_diversity": 0.10,
+}
+
+ANGLE_SPAN_SATURATION = 3
+INDEPENDENT_SOURCE_SATURATION = 3
+
+# Lighting-consistency same-session factor: >=2 accepted sources sharing a
+# named seller attribution are treated as same-session lighting evidence.
+LIGHTING_INDEPENDENT_SESSION_FACTOR = 0.6
+
+INTERFERENCE_DIVERSITY_MIXED = 1.0
+INTERFERENCE_DIVERSITY_ALL_CLEAN = 0.8
+INTERFERENCE_DIVERSITY_ALL_FLAGGED = 0.3
+
+# Multi-angle reviewed-B route floors (documented in
+# docs/operations/bundle-coverage-scoring.md).
+COVERAGE_ROUTE_MINIMUM_SOURCES = 3
+COVERAGE_ROUTE_MINIMUM_DISTINCT_ANGLES = 3
+COVERAGE_ROUTE_MINIMUM_VARIANT_CONFIDENCE = 0.9
+COVERAGE_ROUTE_COMPOSITE_FLOOR = 0.55
+
+
+class CoverageAxis(StrictModel):
+    score: float = Field(ge=0, le=1)
+    rationale: str = Field(min_length=1)
+
+
+class MultiAngleRouteResult(StrictModel):
+    """Reviewed tier-B eligibility route computed from qualifying sources only."""
+
+    qualifying_source_ids: list[str] = Field(default_factory=list)
+    distinct_angles: int = Field(ge=0)
+    minimum_variant_confidence: float = Field(ge=0, le=1)
+    composite_floor: float = Field(ge=0, le=1)
+    satisfied: bool
+    rationale: str = Field(min_length=1)
+
+
+class BundleCoverageRecord(StrictModel):
+    record_version: str = Field(default=COVERAGE_RECORD_VERSION, pattern=r"^\d+\.\d+\.\d+$")
+    bundle_id: str = Field(pattern=SLUG_PATTERN)
+    computed_at: datetime
+    accepted_source_ids: list[str] = Field(default_factory=list)
+    independent_family_count: int = Field(ge=0)
+    distinct_angle_count: int = Field(ge=0)
+    axes: dict[str, CoverageAxis]
+    weights: dict[str, float]
+    composite: float = Field(ge=0, le=1)
+    multi_angle_route: MultiAngleRouteResult
+
+    @model_validator(mode="after")
+    def axes_and_weights_cover_all_seven(self) -> BundleCoverageRecord:
+        expected = set(COVERAGE_AXES)
+        if set(self.axes) != expected:
+            raise ValueError("coverage record must contain exactly the seven documented axes")
+        if set(self.weights) != expected:
+            raise ValueError("coverage weights must cover exactly the seven documented axes")
+        for name, weight in self.weights.items():
+            if weight < 0:
+                raise ValueError(f"coverage weight {name} must be non-negative")
+        return self
+
+
+def _normalize_diagnostics_payload(bundle_root: Path, source_id: str) -> dict[str, Any] | None:
+    path = bundle_root / NORMALIZE_DIAGNOSTICS_DIRECTORY / f"{source_id}.json"
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _registration_accepted(payload: dict[str, Any] | None) -> bool:
+    return payload is not None and payload.get("status") == "accepted"
+
+
+def _angle_label(source: ReferenceSourceRecord, payload: dict[str, Any] | None) -> str | None:
+    """Viewing-angle label: diagnostics pose metadata first, else review-note marker.
+
+    Sources with neither are *unlabeled*; all unlabeled sources collapse into
+    a single angle bucket (fail closed: unproven diversity is not diversity).
+    """
+    if payload is not None:
+        pose = payload.get("pose")
+        if isinstance(pose, dict):
+            label = pose.get("angle_label")
+            if isinstance(label, str) and label.strip():
+                return f"pose:{label.strip().lower()}"
+    notes = source.review_notes or ""
+    marker_index = notes.find(ANGLE_MARKER_PREFIX)
+    if marker_index >= 0:
+        remainder = notes[marker_index + len(ANGLE_MARKER_PREFIX):]
+        label = remainder.split("\n")[0].split(";")[0].strip().lower()
+        if label:
+            return f"note:{label}"
+    return None
+
+
+def _distinct_angle_count(labels: list[str | None]) -> int:
+    named = {label for label in labels if label}
+    unlabeled_bucket = 1 if any(label is None for label in labels) else 0
+    return len(named) + unlabeled_bucket
+
+
+def _provenance_family_key(source: ReferenceSourceRecord) -> str:
+    """Independent-source family attribution — never the source_id.
+
+    Every source whose review notes carry the PROVENANCE UNKNOWN marker
+    collapses into ONE shared family: unattributed listings could all
+    originate from the same actor.
+    """
+    if source.review_notes and PROVENANCE_UNKNOWN_MARKER in source.review_notes:
+        return "provenance-unknown"
+    if source.seller_uploader and source.seller_uploader.strip():
+        return f"seller:{source.seller_uploader.strip().lower()}"
+    return f"listing:{source.source_url.strip().lower()}"
+
+
+def _route_qualifying(
+    accepted: list[ReferenceSourceRecord],
+) -> tuple[list[ReferenceSourceRecord], list[str]]:
+    """Per-source floors for the multi-angle route; a weak source contributes nothing."""
+    qualifying: list[ReferenceSourceRecord] = []
+    exclusions: list[str] = []
+    for source in accepted:
+        reasons: list[str] = []
+        if source.variant_confidence < COVERAGE_ROUTE_MINIMUM_VARIANT_CONFIDENCE:
+            reasons.append(
+                f"variant confidence {source.variant_confidence:.2f} < "
+                f"{COVERAGE_ROUTE_MINIMUM_VARIANT_CONFIDENCE}"
+            )
+        if source.proxy_counterfeit_risk is ProxyRisk.HIGH:
+            reasons.append("high proxy/counterfeit risk")
+        if source.editing_likelihood is EditingLikelihood.HIGH:
+            reasons.append("high editing likelihood")
+        if reasons:
+            exclusions.append(f"{source.source_id}: {'; '.join(reasons)}")
+        else:
+            qualifying.append(source)
+    return qualifying, exclusions
+
+
+def compute_bundle_coverage(
+    bundle_root: Path,
+    *,
+    computed_at: datetime | None = None,
+    weights: dict[str, float] | None = None,
+) -> BundleCoverageRecord:
+    """Deterministic bundle-level coverage record (seven 0-1 axes + composite).
+
+    ``composite = clip(sum(w_axis * score_axis), 0, 1)`` rounded to 4 decimals.
+    Only *accepted* sources count toward any axis: retrieved, media ingested,
+    and normalization/registration diagnostics recorded as accepted.
+    """
+    manifest = load_bundle_manifest(bundle_root)
+    if not manifest.sources:
+        raise BundleError("bundle has no sources to compute coverage for")
+
+    active_weights = dict(weights or DEFAULT_COVERAGE_WEIGHTS)
+    missing = [name for name in COVERAGE_AXES if name not in active_weights]
+    if missing:
+        raise BundleError(f"coverage weights missing axes: {', '.join(missing)}")
+
+    diagnostics = {
+        source.source_id: _normalize_diagnostics_payload(bundle_root, source.source_id)
+        for source in manifest.sources
+    }
+    accepted = [
+        source
+        for source in manifest.sources
+        if source.retrieval_status is RetrievalStatus.RETRIEVED
+        and source.private_media_hash is not None
+        and _registration_accepted(diagnostics[source.source_id])
+    ]
+    accepted_ids = [source.source_id for source in accepted]
+    axes: dict[str, CoverageAxis] = {}
+
+    # 1. Continuous temporal sequence: registered video/sequence media present.
+    video_ids = [s.source_id for s in accepted if s.media_form is MediaForm.VIDEO]
+    axes["temporal_sequence"] = CoverageAxis(
+        score=1.0 if video_ids else 0.0,
+        rationale=(
+            f"registered video/sequence media from: {', '.join(video_ids)}"
+            if video_ids
+            else "no registered video/sequence media in the bundle"
+        ),
+    )
+
+    # 2. Angle span: distinct registered viewing angles. Pose metadata in the
+    # normalization diagnostics wins; else the human ANGLE: review-note marker;
+    # unlabeled sources collapse into one bucket (documented fail-closed proxy).
+    angle_labels = [_angle_label(s, diagnostics[s.source_id]) for s in accepted]
+    distinct_angles = _distinct_angle_count(angle_labels)
+    axes["angle_span"] = CoverageAxis(
+        score=round(min(distinct_angles / ANGLE_SPAN_SATURATION, 1.0), 4),
+        rationale=(
+            f"{distinct_angles} distinct registered viewing angle(s) across "
+            f"{len(accepted)} accepted source(s); unlabeled sources collapse into one bucket "
+            f"(saturates at {ANGLE_SPAN_SATURATION})"
+        ),
+    )
+
+    # 3. Lighting consistency: legible lighting plus same-session evidence
+    # (>=2 accepted sources sharing a named, provenance-known seller).
+    if accepted:
+        legible = [
+            s
+            for s in accepted
+            if s.lighting_usefulness in (LightingUsefulness.MEDIUM, LightingUsefulness.HIGH)
+        ]
+        legible_fraction = len(legible) / len(accepted)
+        session_sellers: dict[str, int] = {}
+        for source in accepted:
+            key = _provenance_family_key(source)
+            if key.startswith("seller:"):
+                session_sellers[key] = session_sellers.get(key, 0) + 1
+        same_session = any(count >= 2 for count in session_sellers.values())
+        factor = 1.0 if same_session else LIGHTING_INDEPENDENT_SESSION_FACTOR
+        lighting_score = round(legible_fraction * factor, 4)
+        lighting_rationale = (
+            f"{len(legible)}/{len(accepted)} accepted source(s) with legible lighting; "
+            + (
+                "same-session evidence: >=2 accepted sources share a named seller"
+                if same_session
+                else f"no same-session evidence (factor {LIGHTING_INDEPENDENT_SESSION_FACTOR})"
+            )
+        )
+    else:
+        lighting_score = 0.0
+        lighting_rationale = "no accepted-registration sources"
+    axes["lighting_consistency"] = CoverageAxis(score=lighting_score, rationale=lighting_rationale)
+
+    # 4. Macro coverage: at least one accepted macro source.
+    macro_ids = [s.source_id for s in accepted if s.macro_available]
+    axes["macro_coverage"] = CoverageAxis(
+        score=1.0 if macro_ids else 0.0,
+        rationale=(
+            f"accepted macro coverage from: {', '.join(macro_ids)}"
+            if macro_ids
+            else "no accepted source offers macro coverage"
+        ),
+    )
+
+    # 5. Independent source count: seller/listing attribution families;
+    # PROVENANCE UNKNOWN sources collapse into ONE family; never source_id count.
+    families = {_provenance_family_key(source) for source in accepted}
+    family_count = len(families)
+    axes["independent_sources"] = CoverageAxis(
+        score=round(min(family_count / INDEPENDENT_SOURCE_SATURATION, 1.0), 4),
+        rationale=(
+            f"{family_count} independent attribution family(ies) among {len(accepted)} "
+            "accepted source(s); provenance-unknown sources collapse into one family "
+            f"(saturates at {INDEPENDENT_SOURCE_SATURATION})"
+        ),
+    )
+
+    # 6. Exact-variant confidence: min/median across accepted sources.
+    if accepted:
+        confidences = [s.variant_confidence for s in accepted]
+        confidence_min = min(confidences)
+        confidence_median = float(median(confidences))
+        variant_score = round((confidence_min + confidence_median) / 2, 4)
+        variant_rationale = (
+            f"variant confidence min {confidence_min:.2f}, median {confidence_median:.2f} "
+            f"across {len(accepted)} accepted source(s)"
+        )
+    else:
+        variant_score = 0.0
+        variant_rationale = "no accepted-registration sources"
+    axes["variant_confidence"] = CoverageAxis(score=variant_score, rationale=variant_rationale)
+
+    # 7. Interference diversity: variety of clean vs flagged views. A missing
+    # interference report counts as flagged (fail closed).
+    if accepted:
+        flagged_count = 0
+        for source in accepted:
+            payload = diagnostics[source.source_id] or {}
+            interference = payload.get("interference")
+            flagged = interference.get("flagged", True) if isinstance(interference, dict) else True
+            flagged_count += 1 if flagged else 0
+        clean_count = len(accepted) - flagged_count
+        if clean_count and flagged_count:
+            interference_score = INTERFERENCE_DIVERSITY_MIXED
+            interference_rationale = (
+                f"both clean ({clean_count}) and interference-flagged ({flagged_count}) views: "
+                "interference can be separated from card appearance"
+            )
+        elif clean_count:
+            interference_score = INTERFERENCE_DIVERSITY_ALL_CLEAN
+            interference_rationale = f"all {clean_count} accepted view(s) clean; no interference contrast available"
+        else:
+            interference_score = INTERFERENCE_DIVERSITY_ALL_FLAGGED
+            interference_rationale = f"all {flagged_count} accepted view(s) interference-flagged or unreported"
+    else:
+        interference_score = 0.0
+        interference_rationale = "no accepted-registration sources"
+    axes["interference_diversity"] = CoverageAxis(
+        score=interference_score, rationale=interference_rationale
+    )
+
+    composite = round(
+        max(0.0, min(sum(active_weights[name] * axes[name].score for name in COVERAGE_AXES), 1.0)),
+        4,
+    )
+
+    # Multi-angle reviewed-B route: computed over qualifying sources only.
+    qualifying, exclusions = _route_qualifying(accepted)
+    qualifying_labels = [_angle_label(s, diagnostics[s.source_id]) for s in qualifying]
+    route_angles = _distinct_angle_count(qualifying_labels)
+    route_min_confidence = (
+        min(s.variant_confidence for s in qualifying) if qualifying else 0.0
+    )
+    conditions = [
+        (
+            len(qualifying) >= COVERAGE_ROUTE_MINIMUM_SOURCES,
+            f"{len(qualifying)}/{COVERAGE_ROUTE_MINIMUM_SOURCES} qualifying accepted-registration sources",
+        ),
+        (
+            route_angles >= COVERAGE_ROUTE_MINIMUM_DISTINCT_ANGLES,
+            f"{route_angles}/{COVERAGE_ROUTE_MINIMUM_DISTINCT_ANGLES} distinct angles among qualifying sources",
+        ),
+        (
+            route_min_confidence >= COVERAGE_ROUTE_MINIMUM_VARIANT_CONFIDENCE,
+            f"minimum variant confidence {route_min_confidence:.2f} "
+            f"(floor {COVERAGE_ROUTE_MINIMUM_VARIANT_CONFIDENCE})",
+        ),
+        (
+            composite >= COVERAGE_ROUTE_COMPOSITE_FLOOR,
+            f"coverage composite {composite:.4f} (floor {COVERAGE_ROUTE_COMPOSITE_FLOOR})",
+        ),
+    ]
+    satisfied = all(held for held, _ in conditions)
+    rationale_parts = [
+        ("PASS " if held else "FAIL ") + description for held, description in conditions
+    ]
+    if exclusions:
+        rationale_parts.append("excluded weak sources: " + " | ".join(exclusions))
+    rationale_parts.append(
+        "human review is still required for tier-B eligibility; tier A is unaffected"
+    )
+    route = MultiAngleRouteResult(
+        qualifying_source_ids=[s.source_id for s in qualifying],
+        distinct_angles=route_angles,
+        minimum_variant_confidence=round(route_min_confidence, 4),
+        composite_floor=COVERAGE_ROUTE_COMPOSITE_FLOOR,
+        satisfied=satisfied,
+        rationale="; ".join(rationale_parts),
+    )
+
+    return BundleCoverageRecord(
+        bundle_id=manifest.bundle_id,
+        computed_at=computed_at or datetime.now(UTC),
+        accepted_source_ids=accepted_ids,
+        independent_family_count=family_count,
+        distinct_angle_count=distinct_angles,
+        axes=axes,
+        weights=active_weights,
+        composite=composite,
+        multi_angle_route=route,
+    )
+
+
+def coverage_bundle(
+    bundle_root: Path,
+    *,
+    computed_at: datetime | None = None,
+    weights: dict[str, float] | None = None,
+) -> BundleCoverageRecord:
+    """Compute and persist the coverage record as ``review/bundle-coverage.json``."""
+    record = compute_bundle_coverage(bundle_root, computed_at=computed_at, weights=weights)
+    _write_json_atomic(
+        bundle_root / BUNDLE_COVERAGE_FILENAME,
+        record.model_dump_json(indent=2, exclude_none=True) + "\n",
+    )
+    return record
+
+
 # --- bundle tiering ---------------------------------------------------------------
 
 BUNDLE_TIER_A_MINIMUM_A_SOURCES = 2
@@ -830,13 +1258,19 @@ def compute_bundle_tier(
     *,
     human_reviewed_tier_b: bool = False,
     reviewer: str | None = None,
+    coverage: BundleCoverageRecord | None = None,
 ) -> BundleTierRecord:
     """Aggregate source tiers into the bundle tier gate.
 
     Robustness rule (ADR-0002: no single source may dominate):
 
     - Tier A requires at least two independent tier-A sources.
-    - Tier B requires at least one tier-A source or two tier-B-or-better sources.
+    - Tier B requires at least one tier-A source, two tier-B-or-better
+      sources, OR a satisfied coverage multi-angle route (>=3 qualifying
+      accepted-registration sources spanning >=3 distinct angles at variant
+      confidence >= 0.9 with the coverage composite over its documented
+      floor). Coverage can only ever lift C to B; it never touches per-source
+      scores, never reaches tier A, and never bypasses human review.
     - Anything else is tier C.
 
     Eligibility is fail-closed: tier A is eligible; tier B is eligible only
@@ -844,12 +1278,17 @@ def compute_bundle_tier(
     """
     if not source_scores:
         raise BundleError("cannot tier a bundle without source scores")
+    if coverage is not None and coverage.bundle_id != bundle_id:
+        raise BundleError(
+            f"coverage record belongs to bundle {coverage.bundle_id}, not {bundle_id}"
+        )
     a_count = sum(score.tier is SourceTier.A for score in source_scores)
     b_or_better = sum(score.tier in (SourceTier.A, SourceTier.B) for score in source_scores)
+    coverage_route = coverage is not None and coverage.multi_angle_route.satisfied
 
     if a_count >= BUNDLE_TIER_A_MINIMUM_A_SOURCES:
         tier = SourceTier.A
-    elif a_count >= 1 or b_or_better >= BUNDLE_TIER_B_MINIMUM_B_SOURCES:
+    elif a_count >= 1 or b_or_better >= BUNDLE_TIER_B_MINIMUM_B_SOURCES or coverage_route:
         tier = SourceTier.B
     else:
         tier = SourceTier.C
@@ -879,12 +1318,14 @@ def tier_bundle(
     computed_at: datetime | None = None,
 ) -> BundleTierRecord:
     scores = score_bundle_sources(bundle_root, computed_at=computed_at)
+    coverage = coverage_bundle(bundle_root, computed_at=computed_at)
     manifest = load_bundle_manifest(bundle_root)
     record = compute_bundle_tier(
         manifest.bundle_id,
         scores,
         human_reviewed_tier_b=human_reviewed_tier_b,
         reviewer=reviewer,
+        coverage=coverage,
     )
     _write_json_atomic(
         bundle_root / BUNDLE_TIER_FILENAME,
