@@ -1,0 +1,78 @@
+{
+  "task_id": "two-lane-p0-state-machine",
+  "run_id": "two-lane-001",
+  "repository_commit": "30b0da1588fdba84eb9f9d3093ea0978f4140e94",
+  "agent": "lead",
+  "agent_tool": "claude-code",
+  "model": "claude-fable-5",
+  "environment": {
+    "platform": "darwin",
+    "python": "3.12",
+    "node": "22",
+    "lockfiles_frozen": true
+  },
+  "source_session": "none-tooling-change",
+  "authentication_state": "not-applicable",
+  "rights_state": "not-applicable",
+  "commands_run": [
+    "scripts/agent-gates/run-quality-gates.sh",
+    "uv run pytest",
+    "uv run ruff check src tests",
+    "uv run python scripts/agent-gates/check-evidence-packet.py docs/agent-ops/evidence-packets/first-benchmark-prep-001.json",
+    "uv run python scripts/agent-gates/check-private-media.py --scan"
+  ],
+  "tests": [
+    { "command": "scripts/agent-gates/run-quality-gates.sh", "result": "pass", "detail": "202 python tests, 7 web tests, staged gates, source pin, web build, lint all green at this commit" },
+    { "command": "uv run pytest tests/test_promotion.py tests/test_promotion_cli.py", "result": "pass", "detail": "Lane A ladder happy path plus every threshold/human-only/lane-immutability failure case; golden 1.0.0 digest pin; tier record binding via --bundle-tier-record" },
+    { "command": "uv run pytest tests/test_reference_bundle.py tests/test_reference_normalize.py tests/test_appearance_envelope.py tests/test_reference_fitting.py tests/test_segmentation_backends.py", "result": "pass", "detail": "all four Phase-1 modules against the frozen ADR-0002 schemas with synthetic fixtures only" }
+  ],
+  "visual_checks": [
+    { "description": "reference_fitting synthetic evidence panel (observed vs fitted render vs difference) generated during P1-FIT verification; near-black diffs for the coherent set, saturated diff for the incoherent source", "result": "pass" }
+  ],
+  "artifacts": [
+    "docs/agent-ops/adr-0002-two-lane-reference-synthesis.md",
+    "src/optcg_material/promotion.py",
+    "src/optcg_material/review.py",
+    "src/optcg_material/reference_bundle.py",
+    "src/optcg_material/reference_normalize.py",
+    "src/optcg_material/appearance_envelope.py",
+    "src/optcg_material/reference_fitting.py",
+    "src/optcg_material/segmentation/sam31_backend.py",
+    "docs/agent-ops/reference-bundle.schema.json",
+    "docs/agent-ops/reference-source-quality.schema.json",
+    "docs/agent-ops/acquisition-task.schema.json",
+    "docs/agent-ops/appearance-envelope.schema.json",
+    "docs/agent-ops/reference-fitting-report.schema.json",
+    "schemas/card-material-profile.schema.json"
+  ],
+  "observations": [
+    { "statement": "A schema-1.0.0 physical promotion event serializes byte-identically under the new event model and its content digest is pinned as a literal; historical physical ledgers replay unchanged.", "evidence_state": "measured", "source": "tests/test_promotion.py golden digest pin" },
+    { "statement": "The reference lane's state set contains no physical-validation state; agent actors are refused at exact-variant-verified, adversarial-review-passed, and production-reference-derived, which also require named reviewers.", "evidence_state": "measured", "source": "tests/test_promotion.py" },
+    { "statement": "A reference-lane profile omitting the lane field is rejected at publication when its provenance declares public-reference-synthesis, and reference-lane publication fails closed until the bundle-review publication adapter lands.", "evidence_state": "measured", "source": "tests/test_review.py" },
+    { "statement": "SAM 3.1 is an official Meta release (facebookresearch/sam3 branch sam3.1, commit 20dba30a, 2026-03-27) with a published checkpoint sha256; the backend refuses inference until the gated checkpoint is present and hash-verified, and no CUDA dependency entered the base environment.", "evidence_state": "source-supported", "source": "src/optcg_material/segmentation/sam31_backend.py provenance comments" },
+    { "statement": "Three independent read-only reviews ran over the full diff: code review MERGEABLE-WITH-FIXES (H1/M1-M4 addressed in commits 1d74007 and 30b0da1), workflow review SOUND-WITH-FIXES (tier binding addressed), security review ACCEPTABLE-WITH-FIXES (both conditions addressed).", "evidence_state": "human-reviewed", "source": "review transcripts in session; fixes in this branch" },
+    { "statement": "No marketplace imagery, private media, or absolute private paths entered the repository; the private-media gate scan is clean and now blocks the full bundle directory set by name.", "evidence_state": "measured", "source": "scripts/agent-gates/check-private-media.py --scan" }
+  ],
+  "inferences": [
+    { "statement": "Appearance-envelope proposals and reference-fitting outputs will be substantially noisier on real compressed marketplace imagery than on the synthetic fixtures; the model-limit and outlier paths exist for that case but are only synthetically exercised.", "evidence_state": "inferred" },
+    { "statement": "Tier thresholds, scoring weights, and fitting acceptance floors are initial proposals and should be recalibrated after the first real bundle.", "evidence_state": "inferred" }
+  ],
+  "known_failures": [
+    "research-renderer Playwright test can time out under parallel software-GPU load; passes in isolation and with CI retry",
+    "reference-lane publication is intentionally blocked (fail-closed) until the bundle-review publication adapter replaces the capture-session gate",
+    "source_quality_tier on a promotion event is self-declared at the library layer; binding to the fail-closed BundleTierRecord happens in optcg-promote (--bundle-tier-record) and is documented in the threat model",
+    "manifest_digest of a reference bundle changes on every save because updated_at participates in the digest"
+  ],
+  "unresolved_questions": [
+    "Design of the bundle-review publication adapter (bundle manifest + tier record standing in for the session manifest) before any reference profile can publish",
+    "Consolidation of the forbidden-phrase constants duplicated across review.py, check-evidence-packet.py, and reference_fitting.py",
+    "Whether a deprecation alias for the removed sam3 registry key is wanted"
+  ],
+  "recommended_state_transition": {
+    "profile_id": "pending-first-reference-bundle",
+    "to_state": "hypothesis",
+    "justification": "Tooling only: Lane A now exists in code, but no reference bundle has been built, so no profile advances beyond hypothesis."
+  },
+  "human_approval_required": true,
+  "reviewer": "Eric Yun"
+}
