@@ -1,0 +1,88 @@
+{
+  "task_id": "first-benchmark-stage1",
+  "objective": "Operate the first authenticated physical benchmark-card session (Stage 1: standard rare holo or basic SR foil) through initialization, capture ingestion, authentication and rights recording, completeness checks, quality preflight, rectification, residual registration, and human registration review. Stop before segmentation, material extraction, fitting, or any shader work.",
+  "current_state": "Pipeline CLI (optcg-material), review ledger (optcg-review), and promotion ledger (optcg-promote) are implemented and covered by CI tests. No physical card has been processed; every downstream stage is unvalidated on real captures. Operator has not yet supplied the card identity, private session path, or capture files.",
+  "inputs": [
+    "OPERATOR-INPUT card identity: card ID, name, set code, language, rarity label, print variant",
+    "OPERATOR-INPUT private session path, e.g. ~/GenkiStuff/optcg-reference-lab/<session-id>/",
+    "OPERATOR-INPUT capture files per docs/operations/first-benchmark-capture-checklist.md",
+    "OPERATOR-INPUT named human authenticator and rights decision"
+  ],
+  "allowed_paths": [
+    "docs/agent-ops/task-packets/",
+    "docs/agent-ops/evidence-packets/",
+    "docs/operations/first-benchmark-capture-checklist.md",
+    "docs/operations/first-benchmark-command-sheet.md",
+    "src/optcg_material/promotion_cli.py",
+    "tests/test_promotion_cli.py",
+    "pyproject.toml"
+  ],
+  "forbidden_paths": [
+    "src/lib/",
+    "public/css/",
+    "src/optcg_material/material_maps.py",
+    "src/optcg_material/semantic.py",
+    "src/optcg_material/fitting.py",
+    "upstream/",
+    "examples/profiles/"
+  ],
+  "required_reading": [
+    "AGENTS.md",
+    "docs/agent-ops/first-benchmark-runbook.md",
+    "docs/operations/capture-ingestion.md",
+    "docs/research/reference-capture-protocol.md",
+    "docs/agent-ops/approval-state-machine.md"
+  ],
+  "dependencies": [
+    "PR #12 (feat/agent-ops-framework): review/promotion ledgers, agent gates, packet schemas",
+    "Physical card in hand with a named human able to record authentication",
+    "Capture rig meeting the locked-camera protocol"
+  ],
+  "assumptions": [
+    "Card identity and finish family are hypotheses until measured; rarity label is catalog metadata only",
+    "Raw captures remain in private storage outside the repository for the entire session",
+    "The session uses one card only; no finish-family generalization is possible from it"
+  ],
+  "evidence_available": [
+    "None yet: no authenticated captures exist. Synthetic fixtures exercise the pipeline in CI but are not card evidence."
+  ],
+  "acceptance_criteria": [
+    "Session manifest exists with immutable hashes for every capture and no in-place edits",
+    "Authentication recorded by a named human via verify-auth; rights recorded via set-rights; neither performed by an agent",
+    "optcg-material validate --strict exits 0",
+    "optcg-material quality exits 0, or every failing frame has a documented reshoot",
+    "optcg-material rectify and register exit 0 with diagnostics written",
+    "registration-reviewer returns PASS with alignment evidence across the full sequence",
+    "Promotion ledger holds open-revision at authenticated-capture-ingested with session reference, capture hashes, and fingerprint",
+    "quality-approved and registration-approved recorded only by the named human reviewer",
+    "Evidence packet for the session passes scripts/agent-gates/check-evidence-packet.py"
+  ],
+  "required_tests": [
+    "uv run pytest (pipeline code unchanged or fully green after any correction)",
+    "uv run ruff check src tests",
+    "scripts/agent-gates/run-quality-gates.sh before any commit"
+  ],
+  "required_visual_checks": [
+    "Flip through the registered stack: title text, borders, cost/power icons, and character linework must not swim between frames",
+    "Inspect corner-detection overlays in diagnostics/registration/ for every rejected or low-confidence frame",
+    "Confirm no highlight clipping destroys a measurement region in the tilt and hard-light sequences"
+  ],
+  "stop_conditions": [
+    "Operator has not supplied card identity, session path, or captures — prepare tooling and stop",
+    "Authentication or rights information missing — fail closed",
+    "Quality preflight rejects frames — request reshoot, do not lower thresholds without human sign-off",
+    "Automatic corner detection uncertain — request reviewed manual quadrilaterals, never accept a weak homography",
+    "Registered frames show visible swim — REJECT and stop; no extraction may proceed",
+    "Any output would overwrite an approved asset or write card imagery into the repository",
+    "Any transition beyond authenticated-capture-ingested would require an agent to act as a human"
+  ],
+  "expected_outputs": [
+    "Private session directory with manifest, raw/, processed/rectified/, processed/registered/, diagnostics/",
+    "diagnostics/quality/summary.json and per-frame reports",
+    "diagnostics/registration/ per-frame sidecars and residual-summary.json",
+    "Promotion ledger entry (open-revision, authenticated-capture-ingested)",
+    "registration-reviewer report with verdict and metrics",
+    "Evidence packet in docs/agent-ops/evidence-packets/ without private paths or imagery"
+  ],
+  "reviewer": "Eric Yun (GenkiStuff) — technical registration review and authentication recording"
+}
