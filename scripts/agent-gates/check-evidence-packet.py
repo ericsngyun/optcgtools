@@ -45,6 +45,14 @@ STATE_NAME_TOKENS = (
     "production-approved",
     "approved-item",
     "approve-item",
+    # Lane A (reference) ladder state names — ADR-0002.
+    "hypothesis",
+    "exact-variant-verified",
+    "public-reference-supported",
+    "reference-assets-proposed",
+    "reference-profile-fitted",
+    "adversarial-review-passed",
+    "production-reference-derived",
 )
 TRUSTED_EVIDENCE_STATES = ("measured", "human-reviewed")
 HUMAN_ONLY_STATES = {
@@ -55,7 +63,18 @@ HUMAN_ONLY_STATES = {
     "render-reviewed",
     "capture-validated",
     "production-validated",
+    # Lane A (reference) human-only ladder states.
+    "exact-variant-verified",
+    "adversarial-review-passed",
+    "production-reference-derived",
 }
+# Lane A output must never claim physical measurement or capture validation
+# (defense in depth, alongside review.py's publication gate).
+FORBIDDEN_REFERENCE_PHRASES = (
+    "capture-validated",
+    "physically measured",
+    "physically exact",
+)
 
 
 def misleading_words_in(text: str) -> list[str]:
@@ -79,6 +98,7 @@ def check_packet(packet: dict) -> list[str]:
         return errors
 
     reviewer = (packet.get("reviewer") or "").strip()
+    lane = packet.get("lane")
 
     for section in ("observations", "inferences"):
         for statement in packet.get(section, []):
@@ -92,6 +112,11 @@ def check_packet(packet: dict) -> list[str]:
             if words and not reviewer:
                 errors.append(
                     f"{section} claim uses {words} without a named reviewer on the packet"
+                )
+            if lane == "reference" and statement["evidence_state"] == "measured":
+                errors.append(
+                    f"{section} claim has evidence_state 'measured'; reference-lane "
+                    "packets never mark appearance/material claims as physically measured"
                 )
 
     transition = packet.get("recommended_state_transition", {})
@@ -121,6 +146,21 @@ def check_packet(packet: dict) -> list[str]:
             errors.append(
                 f"{section} may not claim {words} without a named reviewer: {text!r}"
             )
+
+    if lane == "reference":
+        scanned: list[tuple[str, str]] = []
+        for section in ("observations", "inferences"):
+            scanned.extend(
+                (section, statement["statement"]) for statement in packet.get(section, [])
+            )
+        scanned.append(("recommended_state_transition.justification", justification))
+        scanned.extend(free_text)
+        for section, text in scanned:
+            found = [phrase for phrase in FORBIDDEN_REFERENCE_PHRASES if phrase in text.lower()]
+            if found:
+                errors.append(
+                    f"{section} uses forbidden reference-lane phrase(s) {found}: {text!r}"
+                )
 
     return errors
 
