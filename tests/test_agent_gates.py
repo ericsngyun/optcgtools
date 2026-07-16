@@ -237,6 +237,30 @@ class TestEvidencePacketGate:
         assert result.returncode != 0
         assert "not a reference-lane state" in result.stderr + result.stdout
 
+    def test_reference_lane_packet_accepts_internal_reference_prototype(
+        self, tmp_path: Path
+    ) -> None:
+        """ADR-0002 amendment: `internal-reference-prototype` is a legitimate
+        reference-lane `to_state` recommendation, and its state name is not
+        itself flagged as a misleading claim."""
+        packet = make_packet(
+            lane="reference",
+            observations=[
+                {
+                    "statement": (
+                        "Critic review passed; recommending internal-reference-prototype "
+                        "for a private renderer preview."
+                    ),
+                    "evidence_state": "human-reviewed",
+                }
+            ],
+            recommended_state_transition={"to_state": "internal-reference-prototype"},
+        )
+        path = tmp_path / "packet.json"
+        path.write_text(json.dumps(packet), encoding="utf-8")
+        result = run_gate("check-evidence-packet.py", str(path))
+        assert result.returncode == 0, result.stderr
+
 
 class TestPromotionGate:
     def test_valid_ledger_passes(self, tmp_path: Path) -> None:

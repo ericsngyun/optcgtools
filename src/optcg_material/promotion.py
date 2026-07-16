@@ -96,6 +96,7 @@ class ReferenceState(StrEnum):
     REFERENCE_ASSETS_PROPOSED = "reference-assets-proposed"
     REFERENCE_PROFILE_FITTED = "reference-profile-fitted"
     ADVERSARIAL_REVIEW_PASSED = "adversarial-review-passed"
+    INTERNAL_REFERENCE_PROTOTYPE = "internal-reference-prototype"
     PRODUCTION_REFERENCE_DERIVED = "production-reference-derived"
 
 
@@ -122,6 +123,7 @@ LANE_HUMAN_ONLY: dict[Lane, frozenset[Any]] = {
         {
             ReferenceState.EXACT_VARIANT_VERIFIED,
             ReferenceState.ADVERSARIAL_REVIEW_PASSED,
+            ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
             ReferenceState.PRODUCTION_REFERENCE_DERIVED,
         }
     ),
@@ -137,6 +139,11 @@ REFERENCE_BUNDLE_REQUIRED_FROM = ReferenceState.EXACT_VARIANT_VERIFIED
 REFERENCE_HASHES_REQUIRED_FROM = ReferenceState.PUBLIC_REFERENCE_SUPPORTED
 REFERENCE_TIER_EVIDENCE_RIGHTS_REQUIRED_FROM = ReferenceState.REFERENCE_ASSETS_PROPOSED
 REFERENCE_METRICS_REQUIRED_FROM = ReferenceState.REFERENCE_PROFILE_FITTED
+# `internal-reference-prototype` is the first rank past the critic gate, so it
+# (and everything after it) must carry the adversarial_review reference that
+# earned adversarial-review-passed; evidence_packet is already required from
+# REFERENCE_TIER_EVIDENCE_RIGHTS_REQUIRED_FROM, so this rank inherits it too.
+REFERENCE_ADVERSARIAL_REVIEW_REQUIRED_FROM = ReferenceState.INTERNAL_REFERENCE_PROTOTYPE
 
 
 class ActorType(StrEnum):
@@ -474,6 +481,12 @@ def _validate_reference_requirements(
 
     if rank >= ref_rank[REFERENCE_METRICS_REQUIRED_FROM] and not candidate.metrics:
         raise PromotionError(f"'{target}' requires quantitative metrics")
+
+    if (
+        rank >= ref_rank[REFERENCE_ADVERSARIAL_REVIEW_REQUIRED_FROM]
+        and not candidate.adversarial_review
+    ):
+        raise PromotionError(f"'{target}' requires an adversarial_review reference")
 
     if target in human_only and not candidate.technical_reviewer:
         raise PromotionError(f"'{target}' requires a named technical_reviewer")

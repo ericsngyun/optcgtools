@@ -86,8 +86,17 @@ authenticated physical capture:**
 hypothesis → exact-variant-verified (human-only) → public-reference-supported
 → reference-assets-proposed → reference-profile-fitted
 → adversarial-review-passed (human-only)
+→ internal-reference-prototype (human-only; adversarial_review reference required)
 → production-reference-derived (human-only; technical + rights reviewers)
 ```
+
+`internal-reference-prototype` permits **private** renderer/CSS previews only,
+after exact-variant verification, minimum evidence review, manually reviewed
+masks, and critic review. It is explicitly non-publishable: it never permits
+production publication, capture-validated claims, rights bypass, or
+approved-asset overwrite. `production-reference-derived` remains the only
+publication-eligible state, and that path is itself still fail-closed pending
+the bundle-review publication adapter.
 
 Lane A publication labels are exactly one of: `reference-derived`,
 `source-supported simulation`, `visually fitted across real-card references`.
