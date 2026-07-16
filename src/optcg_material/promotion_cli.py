@@ -11,10 +11,12 @@ from rich.console import Console
 from .models import RightsStatus
 from .promotion import (
     ActorType,
+    Lane,
     ProfileState,
     PromotionAction,
     PromotionError,
     PromotionEvent,
+    ReferenceState,
     append_promotion,
     current_revision_state,
     load_promotion_ledger,
@@ -32,6 +34,9 @@ console = Console()
 LedgerArgument = Annotated[Path, typer.Argument(help="Promotion ledger JSONL path")]
 ActorOption = Annotated[str, typer.Option("--actor", help="Named human, agent, or CI identity")]
 ActorTypeOption = Annotated[ActorType, typer.Option("--actor-type")]
+LaneOption = Annotated[
+    Lane, typer.Option("--lane", help="Promotion lane: physical (Lane B) or reference (Lane A)")
+]
 
 
 def _fail(message: str) -> None:
@@ -56,6 +61,10 @@ def _parse_json_option(raw: str | None, option: str) -> dict:
 
 
 def _append(ledger: Path, **fields) -> None:
+    # Keep `lane: None` (⇒ physical) for the common case so serialized events
+    # stay byte-identical to the pre-two-lane ledger format.
+    if fields.get("lane") is Lane.PHYSICAL:
+        fields["lane"] = None
     try:
         event = PromotionEvent(event_id=new_event_id(), sequence=0, **fields)
         event = append_promotion(ledger, event)
@@ -75,17 +84,35 @@ def open_revision_command(
     actor: ActorOption,
     actor_type: ActorTypeOption,
     revision: Annotated[int, typer.Option("--revision", min=1)],
-    to_state: Annotated[ProfileState, typer.Option("--to-state")] = (
-        ProfileState.AUTHENTICATED_CAPTURE_INGESTED
-    ),
+    lane: LaneOption = Lane.PHYSICAL,
+    to_state: Annotated[
+        str | None,
+        typer.Option(
+            "--to-state",
+            help="Entry state; defaults to authenticated-capture-ingested (physical) "
+            "or hypothesis (reference)",
+        ),
+    ] = None,
     source_session: Annotated[str | None, typer.Option("--source-session")] = None,
     input_hash: Annotated[list[str], typer.Option("--input-hash")] = [],  # noqa: B006 - typer collects repeats
     fingerprint: Annotated[
         str | None, typer.Option("--fingerprint", help='JSON object, e.g. {"captures":"<hash>"}')
     ] = None,
+    reference_bundle_id: Annotated[str | None, typer.Option("--reference-bundle-id")] = None,
+    source_quality_tier: Annotated[str | None, typer.Option("--source-quality-tier")] = None,
+    adversarial_review: Annotated[str | None, typer.Option("--adversarial-review")] = None,
+    linked_reference_revision: Annotated[
+        int | None, typer.Option("--linked-reference-revision")
+    ] = None,
     reason: Annotated[str | None, typer.Option("--reason")] = None,
 ) -> None:
     """Open a new profile revision at an entry state."""
+    if to_state is None:
+        to_state = (
+            ReferenceState.HYPOTHESIS.value
+            if lane is Lane.REFERENCE
+            else ProfileState.AUTHENTICATED_CAPTURE_INGESTED.value
+        )
     _append(
         ledger,
         profile_id=profile_id,
@@ -94,9 +121,14 @@ def open_revision_command(
         to_state=to_state,
         actor=actor,
         actor_type=actor_type,
+        lane=lane,
         source_session=source_session,
         input_hashes=_parse_hashes(input_hash),
         fingerprint=_parse_json_option(fingerprint, "--fingerprint"),
+        reference_bundle_id=reference_bundle_id,
+        source_quality_tier=source_quality_tier,
+        adversarial_review=adversarial_review,
+        linked_reference_revision=linked_reference_revision,
         reason=reason,
     )
 
@@ -105,11 +137,12 @@ def open_revision_command(
 def promote_command(
     ledger: LedgerArgument,
     profile_id: Annotated[str, typer.Option("--profile-id")],
-    from_state: Annotated[ProfileState, typer.Option("--from-state")],
-    to_state: Annotated[ProfileState, typer.Option("--to-state")],
+    from_state: Annotated[str, typer.Option("--from-state")],
+    to_state: Annotated[str, typer.Option("--to-state")],
     actor: ActorOption,
     actor_type: ActorTypeOption,
     revision: Annotated[int, typer.Option("--revision", min=1)],
+    lane: LaneOption = Lane.PHYSICAL,
     source_session: Annotated[str | None, typer.Option("--source-session")] = None,
     input_hash: Annotated[list[str], typer.Option("--input-hash")] = [],  # noqa: B006
     evidence_packet: Annotated[str | None, typer.Option("--evidence-packet")] = None,
@@ -117,6 +150,12 @@ def promote_command(
     technical_reviewer: Annotated[str | None, typer.Option("--technical-reviewer")] = None,
     rights_reviewer: Annotated[str | None, typer.Option("--rights-reviewer")] = None,
     rights_status: Annotated[RightsStatus | None, typer.Option("--rights-status")] = None,
+    reference_bundle_id: Annotated[str | None, typer.Option("--reference-bundle-id")] = None,
+    source_quality_tier: Annotated[str | None, typer.Option("--source-quality-tier")] = None,
+    adversarial_review: Annotated[str | None, typer.Option("--adversarial-review")] = None,
+    linked_reference_revision: Annotated[
+        int | None, typer.Option("--linked-reference-revision")
+    ] = None,
     reason: Annotated[str | None, typer.Option("--reason")] = None,
 ) -> None:
     """Advance one state. Review transitions require --actor-type human and a named reviewer."""
@@ -130,6 +169,7 @@ def promote_command(
         to_state=to_state,
         actor=actor,
         actor_type=actor_type,
+        lane=lane,
         source_session=source_session,
         input_hashes=_parse_hashes(input_hash),
         evidence_packet=evidence_packet,
@@ -137,6 +177,10 @@ def promote_command(
         technical_reviewer=technical_reviewer,
         rights_reviewer=rights_reviewer,
         rights_status=rights_status,
+        reference_bundle_id=reference_bundle_id,
+        source_quality_tier=source_quality_tier,
+        adversarial_review=adversarial_review,
+        linked_reference_revision=linked_reference_revision,
         reason=reason,
     )
 
@@ -145,12 +189,13 @@ def promote_command(
 def demote_command(
     ledger: LedgerArgument,
     profile_id: Annotated[str, typer.Option("--profile-id")],
-    from_state: Annotated[ProfileState, typer.Option("--from-state")],
-    to_state: Annotated[ProfileState, typer.Option("--to-state")],
+    from_state: Annotated[str, typer.Option("--from-state")],
+    to_state: Annotated[str, typer.Option("--to-state")],
     actor: ActorOption,
     actor_type: ActorTypeOption,
     revision: Annotated[int, typer.Option("--revision", min=1)],
     reason: Annotated[str, typer.Option("--reason", help="The failed gate or superseding evidence")],
+    lane: LaneOption = Lane.PHYSICAL,
 ) -> None:
     """Move to an earlier state after a failed gate; requires a reason."""
     _append(
@@ -162,6 +207,7 @@ def demote_command(
         to_state=to_state,
         actor=actor,
         actor_type=actor_type,
+        lane=lane,
         reason=reason,
     )
 
@@ -183,6 +229,7 @@ def status_command(
         raise typer.Exit(code=1)
     console.print(f"profile: [bold]{state.profile_id}[/bold]")
     console.print(f"revision: {state.revision}")
+    console.print(f"lane: [bold]{state.lane}[/bold]")
     console.print(f"state: [bold]{state.state}[/bold]")
     console.print(f"fingerprint: {json.dumps(state.fingerprint, sort_keys=True)}")
     console.print(f"head digest: {state.head_digest}")
