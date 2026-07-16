@@ -1,0 +1,60 @@
+{
+  "task_id": "convergence-p5-internal-prototype-state",
+  "objective": "Add the explicitly non-publishable Lane A state `internal-reference-prototype` between adversarial-review-passed and production-reference-derived: it permits PRIVATE renderer/CSS previews after exact variant verification, minimum evidence review, manually reviewed masks, and critic review; it must never permit production publication, capture-validated claims, rights bypass, or approved-asset overwrite.",
+  "current_state": "Lane A ladder: hypothesis -> exact-variant-verified -> public-reference-supported -> reference-assets-proposed -> reference-profile-fitted -> adversarial-review-passed -> production-reference-derived. Publication gate accepts only reference labels AND currently fails closed entirely for the reference lane.",
+  "inputs": [
+    "src/optcg_material/promotion.py",
+    "src/optcg_material/review.py",
+    "docs/agent-ops/approval-state-machine.md",
+    "docs/agent-ops/adr-0002-two-lane-reference-synthesis.md"
+  ],
+  "allowed_paths": [
+    "src/optcg_material/promotion.py",
+    "src/optcg_material/promotion_cli.py",
+    "src/optcg_material/review.py",
+    "scripts/agent-gates/check-evidence-packet.py",
+    "docs/agent-ops/approval-state-machine.md",
+    "docs/agent-ops/adr-0002-two-lane-reference-synthesis.md",
+    "docs/agent-ops/evidence-packet.schema.json",
+    "AGENTS.md",
+    "tests/test_promotion.py",
+    "tests/test_promotion_cli.py",
+    "tests/test_review.py",
+    "tests/test_agent_gates.py"
+  ],
+  "forbidden_paths": [
+    "src/optcg_material/reference_bundle.py",
+    "src/optcg_material/reference_fitting.py",
+    "src/lib/",
+    "schemas/card-material-profile.schema.json",
+    "public/",
+    "pyproject.toml"
+  ],
+  "assumptions": [
+    "Digest compatibility rules from ADR-0002 hold: no change may alter serialized physical events or any existing reference event; inserting a state before production-reference-derived changes the reference rank map \u2014 existing reference ledgers exist only in private bundles at hypothesis, so the rank insertion is safe; document this reasoning in the ADR amendment."
+  ],
+  "acceptance_criteria": [
+    "ReferenceState gains INTERNAL_REFERENCE_PROTOTYPE between ADVERSARIAL_REVIEW_PASSED and PRODUCTION_REFERENCE_DERIVED; human-only with named technical_reviewer; requires an adversarial_review reference and an evidence packet on the transition.",
+    "The publication gate (review.py) continues to reject internal-reference-prototype profiles for publication with an explicit 'internal preview only, non-publishable' error; production-reference-derived remains the only publication-label state and remains fail-closed pending the bundle-review adapter.",
+    "The golden 1.0.0 digest pin test passes unedited; physical lane untouched byte-for-byte.",
+    "check-evidence-packet accepts internal-reference-prototype as a legitimate state token and as a reference-lane to_state.",
+    "Docs (AGENTS.md ladder block, approval-state-machine.md, ADR-0002 amendment note) updated consistently.",
+    "Tests: agent refused at the new state; human with reviewer+critic-ref+packet accepted; publication of an internal-reference-prototype profile rejected; demotion from and re-promotion to the state works."
+  ],
+  "required_tests": [
+    "uv run pytest tests/test_promotion.py tests/test_review.py tests/test_agent_gates.py",
+    "uv run pytest",
+    "uv run ruff check src tests"
+  ],
+  "stop_conditions": [
+    "Any pre-existing test needs behavioral modification.",
+    "The rank insertion would break any existing ledger replay.",
+    "Any edit outside allowed_paths."
+  ],
+  "expected_outputs": [
+    "internal-reference-prototype state with coded requirements",
+    "Publication-gate rejection path + tests",
+    "Doc/ADR updates"
+  ],
+  "reviewer": "Eric Yun"
+}

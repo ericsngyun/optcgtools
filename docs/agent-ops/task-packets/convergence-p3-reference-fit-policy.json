@@ -1,0 +1,54 @@
+{
+  "task_id": "convergence-p3-reference-fit-policy",
+  "objective": "Split fitting acceptance into two named policies: physical-fit (existing strict linear-RGB thresholds, Lane B controlled captures, unchanged) and reference-synthesis-fit (Lane A public/contributor media). The Lane A objective prioritizes regional foil activation, hue ordering, highlight position, foil occupancy, relative intensity changes, texture frequency, temporal coherence (for sequences), and robust perceptual similarity \u2014 NOT absolute linear-RGB error. Do not simply lower existing thresholds; add calibration fixtures and document why each metric belongs.",
+  "current_state": "reference_fitting.py has one acceptance policy: masked linear-RGB MAE inner objective with accept_error_threshold 0.06, min_accepted_sources 2, min_consistency_score 0.35. Real-media run jp-aa-fit-002 was rejected (0 sources <= 0.06, consistency 0.021) although the fit direction was plausible \u2014 absolute-RGB acceptance is miscalibrated for uncontrolled media by design.",
+  "inputs": [
+    "src/optcg_material/reference_fitting.py",
+    "docs/agent-ops/reference-fitting-report.schema.json",
+    "docs/agent-ops/adr-0002-two-lane-reference-synthesis.md"
+  ],
+  "allowed_paths": [
+    "src/optcg_material/reference_fitting.py",
+    "src/optcg_material/reference_fitting_cli.py",
+    "tests/test_reference_fitting.py",
+    "docs/operations/reference-fit-policy.md"
+  ],
+  "forbidden_paths": [
+    "src/optcg_material/fitting.py",
+    "src/optcg_material/candidate.py",
+    "src/optcg_material/promotion.py",
+    "src/optcg_material/reference_bundle.py",
+    "schemas/",
+    "src/lib/",
+    "AGENTS.md",
+    "pyproject.toml",
+    "scripts/"
+  ],
+  "assumptions": [
+    "The frozen report schema stays intact; policy metadata may go in existing free fields or per_source regional_error maps.",
+    "Lane B physical fitting (fitting.py) is untouched."
+  ],
+  "acceptance_criteria": [
+    "A named policy enum/object selects physical-fit vs reference-synthesis-fit; the CLI exposes --policy with reference-synthesis-fit default for bundle manifests.",
+    "reference-synthesis-fit acceptance uses the directive's perceptual/regional metrics with documented rationale per metric (docs/operations/reference-fit-policy.md), not rescaled RGB thresholds.",
+    "Temporal-coherence metric activates only for sequence observations; still-only sets are not penalized for lacking it.",
+    "Calibration fixtures: synthetic GOOD case (coherent multi-angle observations of a known profile, moderate exposure/compression noise) must ACCEPT under reference-synthesis-fit and may reject under physical-fit; synthetic BAD cases (wrong hue order, displaced highlight, foil on wrong regions, incoherent sources) must each REJECT under reference-synthesis-fit with the failing metric named.",
+    "Single-reference-overfit and model-limit rejections remain in force for both policies.",
+    "Existing tests pass unedited; the physical-fit path produces byte-identical decisions to current behavior."
+  ],
+  "required_tests": [
+    "uv run pytest tests/test_reference_fitting.py",
+    "uv run pytest",
+    "uv run ruff check src tests"
+  ],
+  "stop_conditions": [
+    "A metric cannot be computed from available observation data (document and drop with rationale, don't fake it).",
+    "Any edit outside allowed_paths."
+  ],
+  "expected_outputs": [
+    "Two-policy reference_fitting with CLI flag",
+    "Calibration fixture tests (good accepts, each bad rejects with named metric)",
+    "docs/operations/reference-fit-policy.md rationale"
+  ],
+  "reviewer": "Eric Yun"
+}

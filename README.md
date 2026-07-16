@@ -254,18 +254,28 @@ Start with:
 
 ## Current implementation order
 
-1. capture and provenance — complete;
-2. deterministic registration — complete;
-3. semantic regions — foundation complete, pending real GPU/card validation;
-4. measured material maps — MVP complete, pending real-card calibration;
+Two evidence lanes exist (ADR-0002): Lane B (authenticated physical capture)
+and Lane A (public-reference synthesis, labeled `reference-derived`).
+
+1. capture and provenance (Lane B) — complete;
+2. deterministic registration — complete, exercised on real Lane A references;
+3. semantic regions — foundation complete (SAM 2.1 pinned; SAM 3.1 challenger
+   pinned, checkpoint-gated), pending real GPU/card validation;
+4. measured material maps (Lane B) — MVP complete, pending real-card calibration;
 5. physical reference renderer — complete;
-6. analysis-by-synthesis evaluation — MVP complete, optimization pending;
-7. review workspace — partial;
+6. analysis-by-synthesis evaluation — Lane B MVP complete; Lane A
+   cross-reference fitting implemented and exercised on real public
+   references — the first fits were honestly REJECTED by the acceptance gates
+   (insufficient cross-source coherence); no card profile exists yet;
+7. review workspace — partial (UI not implemented);
 8. CSS compilation — pending;
 9. 3D GLB assets — pending;
 10. benchmark calibration and GenkiStuff integration — pending.
 
-Do not begin broad card-specific shader tuning before authenticated benchmark captures exist.
+Current product goal: one internal reference-derived English Perona OP06-093
+alternate-art web prototype (Lane A; physical capture NOT required for an
+internal prototype). Do not begin broad card-specific shader tuning before a
+reviewed evidence bundle exists for the target card.
 
 ## Rights boundary
 

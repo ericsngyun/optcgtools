@@ -12,9 +12,13 @@ from typer.testing import CliRunner
 from optcg_material.models import Language, RightsStatus
 from optcg_material.provenance import hash_file
 from optcg_material.reference_bundle import (
+    COVERAGE_AXES,
+    COVERAGE_ROUTE_COMPOSITE_FLOOR,
     DEFAULT_SCORE_WEIGHTS,
+    TIER_B_MINIMUM_COMPOSITE,
     AcquisitionTask,
     BlockReason,
+    BundleCoverageRecord,
     BundleError,
     BundleTierRecord,
     CompressionLevel,
@@ -30,8 +34,10 @@ from optcg_material.reference_bundle import (
     SourceTier,
     add_media,
     add_source,
+    compute_bundle_coverage,
     compute_bundle_tier,
     compute_manifest_digest,
+    coverage_bundle,
     init_bundle,
     list_acquisition_tasks,
     load_bundle_manifest,
@@ -529,3 +535,309 @@ def test_cli_end_to_end(tmp_path: Path) -> None:
     result = runner.invoke(app, ["validate", str(bundle_root)])
     assert result.exit_code == 0, result.output
     assert "valid" in result.output
+
+
+# --- bundle coverage ------------------------------------------------------------------
+
+
+def make_single_angle_source(
+    source_id: str,
+    *,
+    seller: str | None = "seller-x",
+    review_notes: str | None = None,
+    variant_confidence: float = 0.9,
+    proxy_risk: ProxyRisk = ProxyRisk.LOW,
+    editing: EditingLikelihood = EditingLikelihood.LOW,
+    media_form: MediaForm = MediaForm.STILL,
+    macro: bool = False,
+) -> ReferenceSourceRecord:
+    """A well-registered but individually weak source (single-angle penalty).
+
+    With accepted registration (alignment 1.0) the per-source composite is
+    ~0.4953 — below the tier-B per-source floor of 0.50 — reproducing the
+    0.499 scenario from the first Lane A execution.
+    """
+    base = make_source(
+        source_id,
+        variant_confidence=variant_confidence,
+        protection=Protection.SLEEVED,
+        proxy_risk=proxy_risk,
+        compression=CompressionLevel.HIGH,
+        editing=editing,
+        useful_angles=1,
+        macro=macro,
+        lighting=LightingUsefulness.MEDIUM,
+        resolution=MediaResolution(width=1000, height=1400),
+    )
+    data = base.model_dump()
+    data["seller_uploader"] = seller
+    data["review_notes"] = review_notes
+    data["media_form"] = media_form
+    return ReferenceSourceRecord.model_validate(data)
+
+
+def write_normalize_diagnostics(
+    bundle_root: Path,
+    source_id: str,
+    *,
+    status: str = "accepted",
+    interference_flagged: bool = False,
+    pose_label: str | None = None,
+) -> None:
+    payload: dict = {"status": status, "interference": {"flagged": interference_flagged}}
+    if pose_label is not None:
+        payload["pose"] = {"angle_label": pose_label}
+    directory = bundle_root / "diagnostics" / "normalize"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{source_id}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
+def add_registered_source(
+    tmp_path: Path,
+    bundle_root: Path,
+    source: ReferenceSourceRecord,
+    *,
+    interference_flagged: bool = False,
+    pose_label: str | None = None,
+) -> None:
+    add_source(bundle_root, source)
+    media = write_media(tmp_path, f"{source.source_id}.png", f"media-{source.source_id}".encode())
+    add_media(bundle_root, source.source_id, media)
+    write_normalize_diagnostics(
+        bundle_root,
+        source.source_id,
+        interference_flagged=interference_flagged,
+        pose_label=pose_label,
+    )
+
+
+def test_coverage_record_has_seven_axes_and_is_persisted(tmp_path: Path) -> None:
+    bundle_root = make_bundle(tmp_path)
+    add_registered_source(
+        tmp_path,
+        bundle_root,
+        make_single_angle_source("ebay-001", review_notes="ANGLE: face-on", macro=True),
+    )
+    record = coverage_bundle(bundle_root, computed_at=FIXED_TIME)
+
+    assert set(record.axes) == set(COVERAGE_AXES)
+    for axis in record.axes.values():
+        assert 0.0 <= axis.score <= 1.0
+        assert axis.rationale
+    assert 0.0 <= record.composite <= 1.0
+
+    coverage_path = bundle_root / "review" / "bundle-coverage.json"
+    assert coverage_path.is_file()
+    reparsed = BundleCoverageRecord.model_validate_json(
+        coverage_path.read_text(encoding="utf-8")
+    )
+    assert reparsed == record
+
+
+def test_coverage_is_deterministic_and_reads_temporal_and_macro_axes(tmp_path: Path) -> None:
+    bundle_root = make_bundle(tmp_path)
+    add_registered_source(
+        tmp_path,
+        bundle_root,
+        make_single_angle_source(
+            "ebay-001", review_notes="ANGLE: face-on", media_form=MediaForm.VIDEO, macro=True
+        ),
+    )
+    first = compute_bundle_coverage(bundle_root, computed_at=FIXED_TIME)
+    second = compute_bundle_coverage(bundle_root, computed_at=FIXED_TIME)
+    assert first.model_dump(mode="json") == second.model_dump(mode="json")
+    assert first.axes["temporal_sequence"].score == 1.0
+    assert first.axes["macro_coverage"].score == 1.0
+
+
+def test_provenance_unknown_sources_collapse_to_one_family(tmp_path: Path) -> None:
+    bundle_root = make_bundle(tmp_path)
+    for index, seller in enumerate(("alice", "bob", "carol"), start=1):
+        add_registered_source(
+            tmp_path,
+            bundle_root,
+            make_single_angle_source(
+                f"ebay-00{index}",
+                seller=seller,
+                review_notes=f"ANGLE: view-{index}; PROVENANCE UNKNOWN — attribution unverified",
+            ),
+        )
+    record = compute_bundle_coverage(bundle_root, computed_at=FIXED_TIME)
+    assert record.independent_family_count == 1
+    assert record.axes["independent_sources"].score == pytest.approx(1 / 3, abs=1e-3)
+
+
+def test_distinct_sellers_count_as_independent_families(tmp_path: Path) -> None:
+    bundle_root = make_bundle(tmp_path)
+    for index, seller in enumerate(("alice", "bob", "carol"), start=1):
+        add_registered_source(
+            tmp_path,
+            bundle_root,
+            make_single_angle_source(
+                f"ebay-00{index}", seller=seller, review_notes=f"ANGLE: view-{index}"
+            ),
+        )
+    record = compute_bundle_coverage(bundle_root, computed_at=FIXED_TIME)
+    assert record.independent_family_count == 3
+    assert record.axes["independent_sources"].score == 1.0
+
+
+def test_unlabeled_angles_collapse_and_pose_metadata_wins(tmp_path: Path) -> None:
+    bundle_root = make_bundle(tmp_path)
+    # Two unlabeled sources collapse into ONE angle bucket (fail closed) ...
+    add_registered_source(tmp_path, bundle_root, make_single_angle_source("ebay-001"))
+    add_registered_source(tmp_path, bundle_root, make_single_angle_source("ebay-002"))
+    record = compute_bundle_coverage(bundle_root, computed_at=FIXED_TIME)
+    assert record.distinct_angle_count == 1
+    # ... while pose metadata in the diagnostics takes precedence over notes.
+    add_registered_source(
+        tmp_path,
+        bundle_root,
+        make_single_angle_source("ebay-003", review_notes="ANGLE: face-on"),
+        pose_label="tilt-left-30",
+    )
+    record = compute_bundle_coverage(bundle_root, computed_at=FIXED_TIME)
+    assert record.distinct_angle_count == 2  # unlabeled bucket + pose label
+
+
+def test_coverage_with_no_accepted_sources_is_zero_and_route_unsatisfied(tmp_path: Path) -> None:
+    bundle_root = make_bundle(tmp_path)
+    add_source(bundle_root, make_single_angle_source("ebay-001"))  # no media, no diagnostics
+    record = compute_bundle_coverage(bundle_root, computed_at=FIXED_TIME)
+    assert record.accepted_source_ids == []
+    assert record.composite == 0.0
+    assert record.multi_angle_route.satisfied is False
+
+
+def test_multi_angle_bundle_reaches_reviewed_b_eligibility(tmp_path: Path) -> None:
+    """The 0.499 scenario: three registered single-angle sources at variant
+    confidence 0.9 reach the reviewed-B eligibility path while each source
+    alone stays below the per-source tier-B floor."""
+    bundle_root = make_bundle(tmp_path)
+    for index, angle in enumerate(("face-on", "tilt-left", "tilt-right"), start=1):
+        add_registered_source(
+            tmp_path,
+            bundle_root,
+            make_single_angle_source(f"ebay-00{index}", review_notes=f"ANGLE: {angle}"),
+        )
+
+    coverage = compute_bundle_coverage(bundle_root, computed_at=FIXED_TIME)
+    assert coverage.distinct_angle_count == 3
+    assert coverage.composite >= COVERAGE_ROUTE_COMPOSITE_FLOOR
+    assert coverage.multi_angle_route.satisfied is True
+
+    unreviewed = tier_bundle(bundle_root)
+    for score in unreviewed.source_scores:
+        assert score.tier is SourceTier.C
+        assert score.composite_score < TIER_B_MINIMUM_COMPOSITE
+    assert unreviewed.tier is SourceTier.B  # multi-angle route, never tier A
+    assert unreviewed.eligible_for_profile is False  # human review still required
+
+    reviewed = tier_bundle(bundle_root, human_reviewed_tier_b=True, reviewer="Eric Yun")
+    assert reviewed.tier is SourceTier.B
+    assert reviewed.eligible_for_profile is True
+
+    # The persisted tier record still conforms to the frozen schema exactly.
+    tier_payload = json.loads(
+        (bundle_root / "review" / "bundle-tier.json").read_text(encoding="utf-8")
+    )
+    validator = load_schema("reference-source-quality.schema.json")
+    validator.validate(
+        {"source_score": tier_payload["source_scores"][0], "bundle_tier": tier_payload}
+    )
+    coverage_payload = json.loads(
+        (bundle_root / "review" / "bundle-coverage.json").read_text(encoding="utf-8")
+    )
+    assert coverage_payload["multi_angle_route"]["satisfied"] is True
+
+
+def test_weak_source_contributes_nothing_to_the_coverage_route(tmp_path: Path) -> None:
+    """A high-proxy-risk source is never upgraded by bundle diversity and its
+    angle does not count toward the multi-angle route."""
+    bundle_root = make_bundle(tmp_path)
+    add_registered_source(
+        tmp_path, bundle_root, make_single_angle_source("ebay-001", review_notes="ANGLE: face-on")
+    )
+    add_registered_source(
+        tmp_path, bundle_root, make_single_angle_source("ebay-002", review_notes="ANGLE: tilt-left")
+    )
+    # The third distinct angle exists ONLY on a weak (high proxy risk) source.
+    add_registered_source(
+        tmp_path,
+        bundle_root,
+        make_single_angle_source(
+            "ebay-003", review_notes="ANGLE: tilt-right", proxy_risk=ProxyRisk.HIGH
+        ),
+    )
+
+    coverage = compute_bundle_coverage(bundle_root, computed_at=FIXED_TIME)
+    assert "ebay-003" not in coverage.multi_angle_route.qualifying_source_ids
+    assert coverage.multi_angle_route.distinct_angles == 2
+    assert coverage.multi_angle_route.satisfied is False
+
+    record = tier_bundle(bundle_root, human_reviewed_tier_b=True, reviewer="Eric Yun")
+    weak = next(score for score in record.source_scores if score.source_id == "ebay-003")
+    assert weak.tier is SourceTier.C  # the individual source is not upgraded
+    assert record.tier is SourceTier.C  # and the bundle is not promoted through it
+    assert record.eligible_for_profile is False
+
+
+def test_coverage_from_a_different_bundle_is_refused() -> None:
+    scores = [score_with_tier("c-one", SourceTier.C)]
+    foreign = BundleCoverageRecord(
+        bundle_id="another-bundle",
+        computed_at=FIXED_TIME,
+        accepted_source_ids=[],
+        independent_family_count=0,
+        distinct_angle_count=0,
+        axes={
+            name: {"score": 0.0, "rationale": "empty"}
+            for name in COVERAGE_AXES
+        },
+        weights=dict.fromkeys(COVERAGE_AXES, 1 / 7),
+        composite=0.0,
+        multi_angle_route={
+            "qualifying_source_ids": [],
+            "distinct_angles": 0,
+            "minimum_variant_confidence": 0.0,
+            "composite_floor": COVERAGE_ROUTE_COMPOSITE_FLOOR,
+            "satisfied": False,
+            "rationale": "empty",
+        },
+    )
+    with pytest.raises(BundleError, match="belongs to bundle"):
+        compute_bundle_tier("bundle-x", scores, coverage=foreign)
+
+
+def test_coverage_cli_verb_writes_record(tmp_path: Path) -> None:
+    bundle_root = make_bundle(tmp_path)
+    add_registered_source(
+        tmp_path, bundle_root, make_single_angle_source("ebay-001", review_notes="ANGLE: face-on")
+    )
+    result = runner.invoke(app, ["coverage", str(bundle_root)])
+    assert result.exit_code == 0, result.output
+    assert "coverage composite" in result.output
+    assert (bundle_root / "review" / "bundle-coverage.json").is_file()
+
+    result = runner.invoke(app, ["coverage", str(bundle_root), "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert set(payload["axes"]) == set(COVERAGE_AXES)
+
+
+def test_single_family_route_is_flagged_for_the_reviewer(tmp_path: Path) -> None:
+    """PR #15 independent-review finding 1: a route satisfied entirely by one
+    provenance family must say so explicitly in the record and rationale."""
+    bundle_root = make_bundle(tmp_path)
+    for index, angle in enumerate(("face-on", "tilt-left", "tilt-right"), start=1):
+        add_registered_source(
+            tmp_path,
+            bundle_root,
+            make_single_angle_source(f"ebay-00{index}", review_notes=f"ANGLE: {angle}"),
+        )
+    coverage = compute_bundle_coverage(bundle_root, computed_at=FIXED_TIME)
+    route = coverage.multi_angle_route
+    assert route.satisfied is True
+    assert route.qualifying_family_count == 1
+    assert route.single_family is True
+    assert "SINGLE-FAMILY ROUTE" in route.rationale

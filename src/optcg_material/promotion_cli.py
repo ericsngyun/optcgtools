@@ -65,7 +65,9 @@ def _verify_bundle_tier_record(
     tier: str | None,
     reference_bundle_id: str | None,
     record_path: Path | None,
-) -> None:
+) -> str | None:
+    """Returns the sha256 hex digest of the verified record (for the ledger
+    fingerprint binding), or None when no tier is declared."""
     """Bind a declared ledger tier to the bundle's computed tier record.
 
     The promotion library stays IO-pure (CI replays ledgers without access to
@@ -76,7 +78,7 @@ def _verify_bundle_tier_record(
     that residual is documented in the approval-state-machine threat model.
     """
     if tier is None:
-        return
+        return None
     if record_path is None:
         _fail(
             "--bundle-tier-record is required when declaring --source-quality-tier "
@@ -100,6 +102,9 @@ def _verify_bundle_tier_record(
             f"bundle '{record.bundle_id}' is not eligible for a profile at tier "
             f"'{record.tier.value}' (tier C, or tier B without a recorded human review)"
         )
+    import hashlib
+
+    return hashlib.sha256(record_path.read_bytes()).hexdigest()
 
 
 def _append(ledger: Path, **fields) -> None:
@@ -210,8 +215,15 @@ def promote_command(
 ) -> None:
     """Advance one state. Review transitions require --actor-type human and a named reviewer."""
     raw_metrics = _parse_json_option(metrics, "--metrics")
+    fingerprint_extra: dict[str, str] = {}
     if lane is Lane.REFERENCE:
-        _verify_bundle_tier_record(source_quality_tier, reference_bundle_id, bundle_tier_record)
+        tier_digest = _verify_bundle_tier_record(
+            source_quality_tier, reference_bundle_id, bundle_tier_record
+        )
+        if tier_digest and source_quality_tier == "B":
+            # Bind the verified record into the ledger (independent-review
+            # finding, PR #15): reviewers can recompute this digest.
+            fingerprint_extra["bundle-tier-record"] = tier_digest
     _append(
         ledger,
         profile_id=profile_id,
@@ -224,6 +236,7 @@ def promote_command(
         lane=lane,
         source_session=source_session,
         input_hashes=_parse_hashes(input_hash),
+        fingerprint=fingerprint_extra,
         evidence_packet=evidence_packet,
         metrics={key: float(value) for key, value in raw_metrics.items()},
         technical_reviewer=technical_reviewer,

@@ -8,6 +8,7 @@ rule for finish-family proposals.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -96,6 +97,7 @@ class ReferenceState(StrEnum):
     REFERENCE_ASSETS_PROPOSED = "reference-assets-proposed"
     REFERENCE_PROFILE_FITTED = "reference-profile-fitted"
     ADVERSARIAL_REVIEW_PASSED = "adversarial-review-passed"
+    INTERNAL_REFERENCE_PROTOTYPE = "internal-reference-prototype"
     PRODUCTION_REFERENCE_DERIVED = "production-reference-derived"
 
 
@@ -122,6 +124,7 @@ LANE_HUMAN_ONLY: dict[Lane, frozenset[Any]] = {
         {
             ReferenceState.EXACT_VARIANT_VERIFIED,
             ReferenceState.ADVERSARIAL_REVIEW_PASSED,
+            ReferenceState.INTERNAL_REFERENCE_PROTOTYPE,
             ReferenceState.PRODUCTION_REFERENCE_DERIVED,
         }
     ),
@@ -137,6 +140,11 @@ REFERENCE_BUNDLE_REQUIRED_FROM = ReferenceState.EXACT_VARIANT_VERIFIED
 REFERENCE_HASHES_REQUIRED_FROM = ReferenceState.PUBLIC_REFERENCE_SUPPORTED
 REFERENCE_TIER_EVIDENCE_RIGHTS_REQUIRED_FROM = ReferenceState.REFERENCE_ASSETS_PROPOSED
 REFERENCE_METRICS_REQUIRED_FROM = ReferenceState.REFERENCE_PROFILE_FITTED
+# `internal-reference-prototype` is the first rank past the critic gate, so it
+# (and everything after it) must carry the adversarial_review reference that
+# earned adversarial-review-passed; evidence_packet is already required from
+# REFERENCE_TIER_EVIDENCE_RIGHTS_REQUIRED_FROM, so this rank inherits it too.
+REFERENCE_ADVERSARIAL_REVIEW_REQUIRED_FROM = ReferenceState.INTERNAL_REFERENCE_PROTOTYPE
 
 
 class ActorType(StrEnum):
@@ -284,7 +292,11 @@ def load_promotion_ledger(path: Path, *, verify: bool = True) -> list[PromotionE
     return events
 
 
-def verify_promotion_ledger(events: list[PromotionEvent]) -> None:
+def verify_promotion_ledger(events: list[PromotionEvent], *, replay: bool = True) -> None:
+    """Verify hash-chain integrity AND (by default) semantically replay every
+    event through validate_transition. A valid-digest but semantically
+    malformed ledger — lane laundering, human-only bypass, rank jumps — fails
+    closed (independent-review finding, PR #15)."""
     previous_digest: str | None = None
     for index, event in enumerate(events):
         if event.sequence != index:
@@ -296,6 +308,18 @@ def verify_promotion_ledger(events: list[PromotionEvent]) -> None:
                 f"promotion event {event.event_id} digest mismatch: ledger was modified"
             )
         previous_digest = event.event_digest
+
+    if replay:
+        seen: list[PromotionEvent] = []
+        for event in events:
+            try:
+                validate_transition(seen, event)
+            except PromotionError as exc:
+                raise PromotionError(
+                    f"semantic replay failed at sequence {event.sequence} "
+                    f"({event.event_id}): {exc}"
+                ) from exc
+            seen.append(event)
 
 
 def current_revision_state(
@@ -467,6 +491,20 @@ def _validate_reference_requirements(
             raise PromotionError(
                 f"'{target}' requires source_quality_tier 'A', or 'B' with human review"
             )
+        # Independent-review finding (PR #15): a bare self-declared "B" is not
+        # auditable. Tier-B events must bind the bundle's fail-closed
+        # BundleTierRecord into the ledger via a fingerprint digest so a
+        # reviewer can recompute and confirm the recorded human review.
+        # (Content verification happens in optcg-promote via
+        # --bundle-tier-record; CI replays ledgers without bundle access.)
+        if candidate.source_quality_tier == "B":
+            tier_digest = candidate.fingerprint.get("bundle-tier-record", "")
+            if not re.fullmatch(r"[0-9a-f]{64}", tier_digest):
+                raise PromotionError(
+                    f"'{target}' with source_quality_tier 'B' requires fingerprint "
+                    "'bundle-tier-record' — the hex64 digest of the human-reviewed "
+                    "BundleTierRecord produced by `optcg-reference tier`"
+                )
         if not candidate.evidence_packet:
             raise PromotionError(f"'{target}' requires an evidence packet reference")
         if candidate.rights_status in (None, RightsStatus.UNKNOWN):
@@ -474,6 +512,12 @@ def _validate_reference_requirements(
 
     if rank >= ref_rank[REFERENCE_METRICS_REQUIRED_FROM] and not candidate.metrics:
         raise PromotionError(f"'{target}' requires quantitative metrics")
+
+    if (
+        rank >= ref_rank[REFERENCE_ADVERSARIAL_REVIEW_REQUIRED_FROM]
+        and not candidate.adversarial_review
+    ):
+        raise PromotionError(f"'{target}' requires an adversarial_review reference")
 
     if target in human_only and not candidate.technical_reviewer:
         raise PromotionError(f"'{target}' requires a named technical_reviewer")
