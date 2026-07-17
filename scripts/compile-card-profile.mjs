@@ -8,6 +8,7 @@
  *     --input-dir <asset-root> \
  *     [--out generated/cards/<profile-id>] \
  *     [--publication-report path/to/check-publish-report.json] \
+ *     [--prototype-report path/to/prototype-attestation.json] \
  *     [--generated-at 2026-01-01T00:00:00Z]
  *
  * Output is written to generated/cards/<profile-id>/ by default. generated/
@@ -26,6 +27,7 @@ function parseArgs(argv) {
     "--input-dir": "inputDir",
     "--out": "outDir",
     "--publication-report": "publicationReportPath",
+    "--prototype-report": "prototypeReportPath",
     "--generated-at": "generatedAt"
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -44,7 +46,8 @@ async function main() {
   if (!options.profilePath || !options.inputDir) {
     throw new CompileRefusal(
       "Usage: compile-card-profile --profile <profile.json> --input-dir <dir> " +
-        "[--out <dir>] [--publication-report <report.json>] [--generated-at <iso>]"
+        "[--out <dir>] [--publication-report <report.json>] " +
+        "[--prototype-report <report.json>] [--generated-at <iso>]"
     );
   }
 

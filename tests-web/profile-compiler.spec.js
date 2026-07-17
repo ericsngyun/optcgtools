@@ -7,11 +7,13 @@ import { expect, test } from "@playwright/test";
 
 import {
   INTERNAL_PROTOTYPE_BANNER,
+  PROTOTYPE_REPORT_KEYS,
   SYNTHETIC_NOTICE,
   classifyProfileState,
   compileCardProfile,
   cssVariablesFor,
   validateAssetUri,
+  validatePrototypeReport,
   validatePublicationReport
 } from "../scripts/lib/profile-compiler.mjs";
 
@@ -98,6 +100,71 @@ test("publication attestation must be strictly shaped, passing, and hash-bound",
     validatePublicationReport(fullReport({ ledger_head_digest: undefined }), digest).ok
   ).toBe(false);
   expect(validatePublicationReport(fullReport({ state: "unreviewed" }), digest).ok).toBe(false);
+});
+
+test("prototype attestation validation is strict, typed, and identity-bound", () => {
+  const digest = "a".repeat(64);
+  const profile = {
+    card: { id: "TEST-001" },
+    provenance: { referenceBundleId: "test-001-fixture-en-b001" }
+  };
+  const fullReport = (overrides = {}) => ({
+    schema_version: "1.0.0",
+    report_type: "prototype-attestation",
+    passed: true,
+    profile_digest: digest,
+    ledger_head_digest: "b".repeat(64),
+    lane: "reference",
+    state: "internal-reference-prototype",
+    profile_id: "test-001-fixture-v1",
+    revision: 1,
+    reference_bundle_id: "test-001-fixture-en-b001",
+    source_quality_tier: "B",
+    bundle_tier_record_digest: "c".repeat(64),
+    evidence_packet: "docs/agent-ops/evidence-packets/synthetic.json",
+    evidence_packet_digest: "d".repeat(64),
+    adversarial_review: "review/critic-verdict.md",
+    metrics_present: true,
+    rights_status: "restricted-research",
+    technical_reviewer: "Eric Yun",
+    input_hashes: ["a".repeat(64)],
+    verifier_version: "optcg-promote/1.1.0",
+    ...overrides
+  });
+
+  expect(PROTOTYPE_REPORT_KEYS).toHaveLength(20);
+  expect(validatePrototypeReport(fullReport(), digest, profile).ok).toBe(true);
+
+  const rejects = (overrides) =>
+    expect(validatePrototypeReport(fullReport(overrides), digest, profile).ok).toBe(false);
+  // Forged minimal report (missing fields).
+  expect(
+    validatePrototypeReport({ passed: true, profile_digest: digest }, digest, profile).ok
+  ).toBe(false);
+  rejects({ profile_digest: "e".repeat(64) }); // stale digest
+  rejects({ profile_id: "other-card-v1" }); // wrong identity
+  rejects({ reference_bundle_id: "some-other-bundle" }); // wrong bundle
+  rejects({ ledger_head_digest: "not-hex" });
+  rejects({ rights_status: "unknown" });
+  rejects({ adversarial_review: "" });
+  rejects({ technical_reviewer: "" });
+  rejects({ bundle_tier_record_digest: null }); // tier B without binding
+  rejects({ source_quality_tier: "A" }); // tier A must carry null
+  rejects({ extra: "forged" }); // unknown field
+
+  // A check-publish-shaped report must not pass as a prototype attestation,
+  // and a prototype attestation must not pass the production validator.
+  const checkPublishShaped = {
+    passed: true,
+    state: "production-approved",
+    errors: [],
+    warnings: [],
+    profile_digest: digest,
+    ledger_head_digest: "b".repeat(64),
+    checked_assets: { albedo: "c".repeat(64) }
+  };
+  expect(validatePrototypeReport(checkPublishShaped, digest, profile).ok).toBe(false);
+  expect(validatePublicationReport(fullReport(), digest).ok).toBe(false);
 });
 
 test("private asset URIs are refused", () => {

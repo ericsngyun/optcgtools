@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -218,8 +219,11 @@ test("synthetic fixture output is marked not-an-accurate-card", async () => {
   assert.ok(result.css.includes(SYNTHETIC_NOTICE));
 });
 
-test("internal reference prototype output is private and non-publishable", async () => {
-  const profile = syntheticProfile({
+const REFERENCE_BUNDLE_ID = "test-001-fixture-en-b001";
+const LEDGER_PROFILE_ID = "test-001-fixture-v1";
+
+function referenceProfile() {
+  return syntheticProfile({
     lane: "reference",
     classification: {
       family: "sp-gold-ornamental",
@@ -229,13 +233,173 @@ test("internal reference prototype output is private and non-publishable", async
       sourceType: "public-reference-synthesis",
       rights: "Derived from public references; internal preview only.",
       reviewStatus: "unreviewed",
-      referenceBundleId: "bundle-test-1"
+      referenceBundleId: REFERENCE_BUNDLE_ID
     }
   });
-  const { result } = await compileFromObject(profile);
+}
+
+/** A structurally complete prototype attestation (the FIXED 20-field contract). */
+function prototypeReport(profileDigest, overrides = {}) {
+  return {
+    schema_version: "1.0.0",
+    report_type: "prototype-attestation",
+    passed: true,
+    profile_digest: profileDigest,
+    ledger_head_digest: "b".repeat(64),
+    lane: "reference",
+    state: "internal-reference-prototype",
+    profile_id: LEDGER_PROFILE_ID,
+    revision: 1,
+    reference_bundle_id: REFERENCE_BUNDLE_ID,
+    source_quality_tier: "B",
+    bundle_tier_record_digest: "c".repeat(64),
+    evidence_packet: "docs/agent-ops/evidence-packets/synthetic.json",
+    evidence_packet_digest: "d".repeat(64),
+    adversarial_review: "review/critic-verdict.md",
+    metrics_present: true,
+    rights_status: "restricted-research",
+    technical_reviewer: "Eric Yun",
+    input_hashes: ["a".repeat(64)],
+    verifier_version: "optcg-promote/1.1.0",
+    ...overrides
+  };
+}
+
+async function referenceWorkspace() {
+  const root = await makeWorkspace();
+  const inputDir = path.join(root, "input");
+  await writeFixtureAssets(inputDir);
+  const profilePath = path.join(root, "profile.json");
+  const rawProfile = `${JSON.stringify(referenceProfile(), null, 2)}\n`;
+  await fs.writeFile(profilePath, rawProfile);
+  return { root, inputDir, profilePath, digest: sha256Hex(rawProfile) };
+}
+
+test("metadata-only reference profile refuses without --prototype-report", async () => {
+  // The PR #16 bypass: profile fields alone (lane/confidence/sourceType/
+  // bundle id, regardless of reviewStatus) must never compile a reference
+  // profile — a ledger-verified prototype attestation is required.
+  await assert.rejects(() => compileFromObject(referenceProfile()), /--prototype-report/);
+});
+
+test("reference profile compiles with a shape-valid, hash-bound prototype attestation", async () => {
+  const { root, inputDir, profilePath, digest } = await referenceWorkspace();
+  const reportRaw = JSON.stringify(prototypeReport(digest));
+  const reportPath = path.join(root, "prototype-attestation.json");
+  await fs.writeFile(reportPath, reportRaw);
+  const result = await compileCardProfile({
+    profilePath,
+    inputDir,
+    outDir: path.join(root, "out"),
+    prototypeReportPath: reportPath
+  });
   assert.equal(result.state, "internal-reference-prototype");
   assert.equal(result.manifest.visibility, "private-nonpublishable");
   assert.ok(result.css.includes(INTERNAL_PROTOTYPE_BANNER));
+  assert.deepEqual(result.manifest.prototypeAttestation, {
+    reportSha256: sha256Hex(reportRaw),
+    passed: true
+  });
+  assert.equal(result.manifest.publication, null);
+});
+
+test("prototype attestation negatives are refused", async () => {
+  const { root, inputDir, profilePath, digest } = await referenceWorkspace();
+  const compileWith = async (name, report) => {
+    const reportPath = path.join(root, `${name}.json`);
+    await fs.writeFile(reportPath, JSON.stringify(report));
+    return compileCardProfile({
+      profilePath,
+      inputDir,
+      outDir: path.join(root, `out-${name}`),
+      prototypeReportPath: reportPath
+    });
+  };
+
+  // Forged minimal report: passed + digest alone is not proof of the ladder.
+  await assert.rejects(
+    () => compileWith("forged", { passed: true, profile_digest: digest }),
+    /missing field/
+  );
+  // Stale digest: attestation bound to different profile bytes.
+  await assert.rejects(
+    () => compileWith("stale", prototypeReport("e".repeat(64))),
+    /bound to a different profile/
+  );
+  await assert.rejects(
+    () => compileWith("wrong-id", prototypeReport(digest, { profile_id: "other-card-v1" })),
+    /does not match the compiled profile's card id/
+  );
+  await assert.rejects(
+    () =>
+      compileWith(
+        "wrong-bundle",
+        prototypeReport(digest, { reference_bundle_id: "some-other-bundle" })
+      ),
+    /referenceBundleId/
+  );
+  await assert.rejects(
+    () =>
+      compileWith(
+        "bad-ledger-head",
+        prototypeReport(digest, { ledger_head_digest: "not-a-digest" })
+      ),
+    /ledger_head_digest/
+  );
+  await assert.rejects(
+    () => compileWith("rights", prototypeReport(digest, { rights_status: "unknown" })),
+    /rights_status/
+  );
+  const noPacket = prototypeReport(digest);
+  delete noPacket.evidence_packet;
+  await assert.rejects(
+    () => compileWith("no-packet", noPacket),
+    /missing field 'evidence_packet'/
+  );
+  await assert.rejects(
+    () => compileWith("no-adv", prototypeReport(digest, { adversarial_review: "" })),
+    /adversarial_review/
+  );
+  await assert.rejects(
+    () => compileWith("no-reviewer", prototypeReport(digest, { technical_reviewer: "" })),
+    /technical_reviewer/
+  );
+  // Tier B without a bound tier-record digest.
+  await assert.rejects(
+    () =>
+      compileWith("tier-b-null", prototypeReport(digest, { bundle_tier_record_digest: null })),
+    /tier B requires a bundle_tier_record_digest/
+  );
+  // Tier A must carry null, not a digest.
+  await assert.rejects(
+    () => compileWith("tier-a-digest", prototypeReport(digest, { source_quality_tier: "A" })),
+    /must be null for tier A/
+  );
+  await assert.rejects(
+    () => compileWith("extra", prototypeReport(digest, { extra: "forged" })),
+    /unknown field 'extra'/
+  );
+  // A check-publish-shaped report is not a prototype attestation.
+  await assert.rejects(
+    () =>
+      compileWith("check-publish-shaped", {
+        passed: true,
+        state: "production-approved",
+        errors: [],
+        warnings: [],
+        profile_digest: digest,
+        ledger_head_digest: "b".repeat(64),
+        checked_assets: { albedo: "c".repeat(64) }
+      }),
+    /prototype attestation/
+  );
+});
+
+test("a prototype attestation is not accepted by the production path", () => {
+  const digest = "a".repeat(64);
+  const result = validatePublicationReport(prototypeReport(digest), digest);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((error) => error.includes("unknown field")));
 });
 
 function productionProfile() {
@@ -561,4 +725,140 @@ test("publication report with unknown extra fields is refused", () => {
   const result = validatePublicationReport(report, digest);
   assert.equal(result.ok, false);
   assert.ok(result.errors.some((e) => e.includes("unknown field 'extra'")));
+});
+
+test("end-to-end: a real optcg-promote ledger attestation compiles a reference profile", async () => {
+  // Builds a genuine Lane A promotion ledger one state at a time through
+  // internal-reference-prototype (mirroring tests/test_promotion_cli.py's
+  // _ladder_to sequence), generates the attestation with
+  // `uv run optcg-promote prototype-attestation`, and compiles with it.
+  const root = await makeWorkspace();
+  const inputDir = path.join(root, "input");
+  await writeFixtureAssets(inputDir);
+  const ledger = path.join(root, "promotions.jsonl");
+  const HASH = "a".repeat(64);
+
+  const profilePath = path.join(root, "profile.json");
+  await fs.writeFile(profilePath, `${JSON.stringify(referenceProfile(), null, 2)}\n`);
+  const packetPath = path.join(root, "evidence.json");
+  await fs.writeFile(packetPath, '{"synthetic": true}\n');
+
+  const tierRecordPath = path.join(root, "tier-record.json");
+  await fs.writeFile(
+    tierRecordPath,
+    JSON.stringify({
+      bundle_id: REFERENCE_BUNDLE_ID,
+      tier: "B",
+      source_scores: [
+        {
+          source_id: "listing-001",
+          exact_variant_match: 1.0,
+          english_confirmation: 1.0,
+          surface_visibility: 0.8,
+          angles_score: 0.6,
+          macro_score: 0.5,
+          lighting_diversity: 0.5,
+          resolution_score: 0.8,
+          compression_penalty: 0.1,
+          editing_risk_penalty: 0.0,
+          proxy_risk_penalty: 0.0,
+          alignment_success: 0.9,
+          weights: {},
+          composite_score: 0.85,
+          tier: "A",
+          tier_rationale: "synthetic",
+          computed_at: "2026-07-16T00:00:00Z"
+        }
+      ],
+      human_reviewed_tier_b: true,
+      reviewer: "Eric Yun",
+      eligible_for_profile: true
+    })
+  );
+
+  const promote = (args) =>
+    execFileSync("uv", ["run", "optcg-promote", ...args], {
+      cwd: REPO_ROOT,
+      stdio: "pipe",
+      encoding: "utf8"
+    });
+
+  promote([
+    "open-revision", ledger,
+    "--profile-id", LEDGER_PROFILE_ID,
+    "--actor", "capture-operator", "--actor-type", "agent",
+    "--revision", "1", "--lane", "reference"
+  ]);
+  promote([
+    "promote", ledger,
+    "--profile-id", LEDGER_PROFILE_ID,
+    "--from-state", "hypothesis", "--to-state", "exact-variant-verified",
+    "--actor", "Eric Yun", "--actor-type", "human",
+    "--technical-reviewer", "Eric Yun",
+    "--revision", "1", "--lane", "reference",
+    "--reference-bundle-id", REFERENCE_BUNDLE_ID
+  ]);
+  promote([
+    "promote", ledger,
+    "--profile-id", LEDGER_PROFILE_ID,
+    "--from-state", "exact-variant-verified", "--to-state", "public-reference-supported",
+    "--actor", "capture-operator", "--actor-type", "agent",
+    "--revision", "1", "--lane", "reference",
+    "--reference-bundle-id", REFERENCE_BUNDLE_ID,
+    "--input-hash", HASH
+  ]);
+  const laterStep = (fromState, toState, extra = []) =>
+    promote([
+      "promote", ledger,
+      "--profile-id", LEDGER_PROFILE_ID,
+      "--from-state", fromState, "--to-state", toState,
+      "--actor", "capture-operator", "--actor-type", "agent",
+      "--revision", "1", "--lane", "reference",
+      "--reference-bundle-id", REFERENCE_BUNDLE_ID,
+      "--input-hash", HASH,
+      "--source-quality-tier", "B",
+      "--bundle-tier-record", tierRecordPath,
+      "--metrics", '{"consistency": 0.81}',
+      "--evidence-packet", "docs/agent-ops/evidence-packets/synthetic.json",
+      "--rights-status", "restricted-research",
+      ...extra
+    ]);
+  laterStep("public-reference-supported", "reference-assets-proposed");
+  laterStep("reference-assets-proposed", "reference-profile-fitted");
+  const humanExtra = [
+    "--actor", "Eric Yun", "--actor-type", "human",
+    "--technical-reviewer", "Eric Yun",
+    "--adversarial-review", "review/critic-verdict.md"
+  ];
+  laterStep("reference-profile-fitted", "adversarial-review-passed", humanExtra);
+  laterStep("adversarial-review-passed", "internal-reference-prototype", humanExtra);
+
+  const reportPath = path.join(root, "prototype-attestation.json");
+  promote([
+    "prototype-attestation", ledger,
+    "--profile-id", LEDGER_PROFILE_ID,
+    "--profile", profilePath,
+    "--evidence-packet-file", packetPath,
+    "--output", reportPath
+  ]);
+
+  const reportRaw = await fs.readFile(reportPath);
+  const report = JSON.parse(reportRaw.toString("utf8"));
+  assert.equal(report.report_type, "prototype-attestation");
+  assert.equal(report.state, "internal-reference-prototype");
+  assert.equal(report.profile_digest, sha256Hex(await fs.readFile(profilePath)));
+
+  const result = await compileCardProfile({
+    profilePath,
+    inputDir,
+    outDir: path.join(root, "out"),
+    prototypeReportPath: reportPath
+  });
+  assert.equal(result.state, "internal-reference-prototype");
+  assert.equal(result.manifest.visibility, "private-nonpublishable");
+  assert.ok(result.css.includes(INTERNAL_PROTOTYPE_BANNER));
+  assert.deepEqual(result.manifest.prototypeAttestation, {
+    reportSha256: sha256Hex(reportRaw),
+    passed: true
+  });
 });

@@ -197,11 +197,15 @@ export function classifyProfileState(profile) {
         `reference-lane profile is not compilable: ${problems.join("; ")}`
       );
     }
+    // Metadata checks above are preconditions only: reference-lane
+    // compilation additionally REQUIRES a ledger-verified prototype
+    // attestation (PR #16 blocking finding); metadata alone never compiles.
     return {
       state: "internal-reference-prototype",
       visibility: "private-nonpublishable",
       notice: INTERNAL_PROTOTYPE_BANNER,
-      requiresPublicationReport: false
+      requiresPublicationReport: false,
+      requiresPrototypeReport: true
     };
   }
 
@@ -318,6 +322,177 @@ export function validatePublicationReport(report, profileSha256) {
       "publication report is bound to a different profile: " +
         `report=${report.profile_digest.toLowerCase()}, candidate=${profileSha256}`
     );
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+/**
+ * The FIXED 20-field internal-reference-prototype attestation contract
+ * (docs/agent-ops/task-packets/css-compiler-prototype-attestation.json),
+ * emitted by `optcg-promote prototype-attestation` after full ledger
+ * verification and semantic replay. JavaScript validates shape and byte
+ * bindings ONLY — promotion-ladder semantics live in Python, never here.
+ */
+export const PROTOTYPE_REPORT_KEYS = Object.freeze([
+  "schema_version",
+  "report_type",
+  "passed",
+  "profile_digest",
+  "ledger_head_digest",
+  "lane",
+  "state",
+  "profile_id",
+  "revision",
+  "reference_bundle_id",
+  "source_quality_tier",
+  "bundle_tier_record_digest",
+  "evidence_packet",
+  "evidence_packet_digest",
+  "adversarial_review",
+  "metrics_present",
+  "rights_status",
+  "technical_reviewer",
+  "input_hashes",
+  "verifier_version"
+]);
+
+const PROTOTYPE_REPORT_KEY_SET = new Set(PROTOTYPE_REPORT_KEYS);
+
+function isHex64(value) {
+  return typeof value === "string" && SHA256_HEX.test(value.toLowerCase());
+}
+
+function isNonEmptyString(value) {
+  return typeof value === "string" && value.length > 0;
+}
+
+/**
+ * The ledger profile id is a slug (e.g. "xx00-000-name-v2") derived from the
+ * card id; it must equal the compiled card id (case-insensitive) or extend it
+ * with a "-" suffix.
+ */
+function prototypeProfileIdMatches(reportProfileId, cardId) {
+  if (!isNonEmptyString(reportProfileId) || !isNonEmptyString(cardId)) return false;
+  const slug = reportProfileId.toLowerCase();
+  const id = cardId.toLowerCase();
+  return slug === id || slug.startsWith(`${id}-`);
+}
+
+/**
+ * Validate a prototype attestation for internal-reference-prototype
+ * compilation. Strict: exactly the 20 contract fields (missing or unknown
+ * keys refused), typed checks, and byte/identity bindings against the exact
+ * profile being compiled.
+ */
+export function validatePrototypeReport(report, profileSha256, profile) {
+  const errors = [];
+  if (!report || typeof report !== "object" || Array.isArray(report)) {
+    errors.push("prototype attestation must be a JSON object");
+    return { ok: false, errors };
+  }
+
+  for (const key of Object.keys(report)) {
+    if (!PROTOTYPE_REPORT_KEY_SET.has(key)) {
+      errors.push(`prototype attestation contains unknown field '${key}'`);
+    }
+  }
+  for (const key of PROTOTYPE_REPORT_KEYS) {
+    if (!Object.hasOwn(report, key)) {
+      errors.push(`prototype attestation is missing field '${key}'`);
+    }
+  }
+  if (errors.length > 0) return { ok: false, errors };
+
+  if (report.schema_version !== "1.0.0") {
+    errors.push(`prototype attestation schema_version must be '1.0.0' (got '${report.schema_version}')`);
+  }
+  if (report.report_type !== "prototype-attestation") {
+    errors.push(
+      "attestation report_type must be 'prototype-attestation' " +
+        `(got '${report.report_type}'); a check-publish report is not valid for ` +
+        "reference-lane compilation"
+    );
+  }
+  if (report.passed !== true) {
+    errors.push("prototype attestation did not pass (passed must be boolean true)");
+  }
+  if (report.lane !== "reference") {
+    errors.push(`prototype attestation lane must be 'reference' (got '${report.lane}')`);
+  }
+  if (report.state !== "internal-reference-prototype") {
+    errors.push(
+      `prototype attestation state must be 'internal-reference-prototype' (got '${report.state}')`
+    );
+  }
+  if (!isHex64(report.profile_digest)) {
+    errors.push("prototype attestation profile_digest must be a sha256 hex digest");
+  } else if (report.profile_digest.toLowerCase() !== profileSha256.toLowerCase()) {
+    errors.push(
+      "prototype attestation is bound to a different profile: " +
+        `report=${report.profile_digest.toLowerCase()}, candidate=${profileSha256}`
+    );
+  }
+  if (!isHex64(report.ledger_head_digest)) {
+    errors.push("prototype attestation ledger_head_digest must be a sha256 hex digest");
+  }
+  if (!prototypeProfileIdMatches(report.profile_id, profile?.card?.id)) {
+    errors.push(
+      `prototype attestation profile_id '${report.profile_id}' does not match the ` +
+        `compiled profile's card id '${profile?.card?.id}'`
+    );
+  }
+  if (!Number.isInteger(report.revision) || report.revision < 1) {
+    errors.push("prototype attestation revision must be an integer >= 1");
+  }
+  const bundleId = profile?.provenance?.referenceBundleId;
+  if (!isNonEmptyString(report.reference_bundle_id) || report.reference_bundle_id !== bundleId) {
+    errors.push(
+      `prototype attestation reference_bundle_id '${report.reference_bundle_id}' does not ` +
+        `match the profile's provenance.referenceBundleId '${bundleId}'`
+    );
+  }
+  if (report.source_quality_tier !== "A" && report.source_quality_tier !== "B") {
+    errors.push(
+      `prototype attestation source_quality_tier must be 'A' or 'B' (got '${report.source_quality_tier}')`
+    );
+  } else if (report.source_quality_tier === "B") {
+    if (!isHex64(report.bundle_tier_record_digest)) {
+      errors.push(
+        "prototype attestation for tier B requires a bundle_tier_record_digest sha256"
+      );
+    }
+  } else if (report.bundle_tier_record_digest !== null) {
+    errors.push("prototype attestation bundle_tier_record_digest must be null for tier A");
+  }
+  if (!isNonEmptyString(report.evidence_packet)) {
+    errors.push("prototype attestation evidence_packet must be a non-empty string");
+  }
+  if (!isHex64(report.evidence_packet_digest)) {
+    errors.push("prototype attestation evidence_packet_digest must be a sha256 hex digest");
+  }
+  if (!isNonEmptyString(report.adversarial_review)) {
+    errors.push("prototype attestation adversarial_review must be a non-empty string");
+  }
+  if (report.metrics_present !== true) {
+    errors.push("prototype attestation metrics_present must be boolean true");
+  }
+  if (!isNonEmptyString(report.rights_status) || report.rights_status === "unknown") {
+    errors.push("prototype attestation rights_status must be resolved (never 'unknown')");
+  }
+  if (!isNonEmptyString(report.technical_reviewer)) {
+    errors.push("prototype attestation technical_reviewer must be a non-empty string");
+  }
+  if (!Array.isArray(report.input_hashes) || report.input_hashes.length === 0) {
+    errors.push("prototype attestation input_hashes must be a non-empty array");
+  } else {
+    for (const hash of report.input_hashes) {
+      if (!isHex64(hash)) {
+        errors.push(`prototype attestation input hash '${hash}' is not a sha256 hex digest`);
+      }
+    }
+  }
+  if (!isNonEmptyString(report.verifier_version)) {
+    errors.push("prototype attestation verifier_version must be a non-empty string");
   }
   return { ok: errors.length === 0, errors };
 }
@@ -760,10 +935,18 @@ async function readDeclaredAssets(profile, inputDir) {
  *  - inputDir: root directory the profile's asset uris resolve inside
  *  - outDir: output directory (created; card.css/card-manifest.json/assets/)
  *  - publicationReportPath: attestation from `optcg-review check-publish`
+ *  - prototypeReportPath: attestation from `optcg-promote prototype-attestation`
  *  - generatedAt: optional fixed timestamp string recorded in the manifest
  */
 export async function compileCardProfile(options) {
-  const { profilePath, inputDir, outDir, publicationReportPath, generatedAt } = options;
+  const {
+    profilePath,
+    inputDir,
+    outDir,
+    publicationReportPath,
+    prototypeReportPath,
+    generatedAt
+  } = options;
   if (!profilePath || !inputDir || !outDir) {
     throw new CompileRefusal("profilePath, inputDir, and outDir are required");
   }
@@ -812,6 +995,32 @@ export async function compileCardProfile(options) {
     publication = { reportSha256: sha256Hex(rawReport), passed: true };
   }
 
+  let prototypeAttestation = null;
+  if (state.requiresPrototypeReport) {
+    if (!prototypeReportPath) {
+      throw new CompileRefusal(
+        "reference-lane (internal-reference-prototype) profiles require " +
+          "--prototype-report (the JSON attestation emitted by `optcg-promote " +
+          "prototype-attestation`); profile metadata alone is never sufficient — " +
+          "the attestation is ledger-verified proof of the promotion state"
+      );
+    }
+    const rawReport = await fs.readFile(prototypeReportPath);
+    let report;
+    try {
+      report = JSON.parse(rawReport.toString("utf8"));
+    } catch (error) {
+      throw new CompileRefusal(`prototype attestation is not valid JSON: ${error.message}`);
+    }
+    const result = validatePrototypeReport(report, profileSha256, profile);
+    if (!result.ok) {
+      throw new CompileRefusal(
+        `prototype attestation rejected: ${result.errors.join("; ")}`
+      );
+    }
+    prototypeAttestation = { reportSha256: sha256Hex(rawReport), passed: true };
+  }
+
   const assets = await readDeclaredAssets(profile, inputDir);
   const declaredChannels = assets.map((asset) => asset.channel);
   const cssChannels = declaredChannels.filter((channel) => CSS_CHANNELS.includes(channel));
@@ -846,6 +1055,7 @@ export async function compileCardProfile(options) {
     visibility: state.visibility,
     ...(state.notice ? { notice: state.notice } : {}),
     publication,
+    prototypeAttestation,
     css: { path: "card.css", sha256: sha256Hex(css) },
     cssVariables,
     assets: assetRefs,
