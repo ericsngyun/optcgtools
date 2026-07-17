@@ -237,8 +237,8 @@ test("internal reference prototype output is private and non-publishable", async
   assert.ok(result.css.includes(INTERNAL_PROTOTYPE_BANNER));
 });
 
-test("approved production profile refuses without a publication-gate attestation", async () => {
-  const profile = syntheticProfile({
+function productionProfile() {
+  return syntheticProfile({
     classification: { family: "sp-gold-ornamental", confidence: "production-validated" },
     provenance: {
       sourceType: "controlled-capture",
@@ -247,67 +247,93 @@ test("approved production profile refuses without a publication-gate attestation
       reviewer: "Eric Yun"
     }
   });
-  await assert.rejects(() => compileFromObject(profile), /publication-report/);
+}
+
+/** A structurally complete check-publish report (review.py PublicationReport). */
+function publicationReport(profileDigest, overrides = {}) {
+  return {
+    passed: true,
+    state: "production-approved",
+    errors: [],
+    warnings: [],
+    profile_digest: profileDigest,
+    ledger_head_digest: "b".repeat(64),
+    checked_assets: { albedo: "c".repeat(64) },
+    ...overrides
+  };
+}
+
+test("approved production profile refuses without a publication-gate attestation", async () => {
+  await assert.rejects(() => compileFromObject(productionProfile()), /publication-report/);
 });
 
-test("production compiles only with a passing, hash-bound attestation", async () => {
-  const profile = syntheticProfile({
-    classification: { family: "sp-gold-ornamental", confidence: "production-validated" },
-    provenance: {
-      sourceType: "controlled-capture",
-      rights: "Owned physical card, controlled capture.",
-      reviewStatus: "approved",
-      reviewer: "Eric Yun"
-    }
-  });
+test("production compiles only with a passing, strictly-shaped, hash-bound attestation", async () => {
   const root = await makeWorkspace();
   const inputDir = path.join(root, "input");
   await writeFixtureAssets(inputDir);
   const profilePath = path.join(root, "profile.json");
-  const rawProfile = `${JSON.stringify(profile, null, 2)}\n`;
+  const rawProfile = `${JSON.stringify(productionProfile(), null, 2)}\n`;
   await fs.writeFile(profilePath, rawProfile);
   const digest = sha256Hex(rawProfile);
 
-  const failing = path.join(root, "failing-report.json");
-  await fs.writeFile(
-    failing,
-    JSON.stringify({ passed: false, errors: ["review state is 'unreviewed'"], profile_digest: digest })
-  );
+  const compileWith = async (name, report) => {
+    const reportPath = path.join(root, `${name}.json`);
+    await fs.writeFile(reportPath, JSON.stringify(report));
+    return compileCardProfile({
+      profilePath,
+      inputDir,
+      outDir: path.join(root, `out-${name}`),
+      publicationReportPath: reportPath
+    });
+  };
+
   await assert.rejects(
     () =>
-      compileCardProfile({
-        profilePath,
-        inputDir,
-        outDir: path.join(root, "out-fail"),
-        publicationReportPath: failing
-      }),
+      compileWith(
+        "failing",
+        publicationReport(digest, { passed: false, errors: ["review state is 'unreviewed'"] })
+      ),
     /did not pass/
   );
-
-  const wrongDigest = path.join(root, "wrong-digest-report.json");
-  await fs.writeFile(
-    wrongDigest,
-    JSON.stringify({ passed: true, errors: [], profile_digest: "a".repeat(64) })
-  );
   await assert.rejects(
-    () =>
-      compileCardProfile({
-        profilePath,
-        inputDir,
-        outDir: path.join(root, "out-wrong"),
-        publicationReportPath: wrongDigest
-      }),
+    () => compileWith("wrong-digest", publicationReport("a".repeat(64))),
     /bound to a different profile/
   );
+  // Forged minimal attestation: passed + matching digest alone is not proof.
+  await assert.rejects(
+    () => compileWith("forged-minimal", { passed: true, profile_digest: digest }),
+    /errors must be an array/
+  );
+  // Non-array errors field (e.g. errors: "gate failed") must be rejected.
+  await assert.rejects(
+    () => compileWith("errors-string", publicationReport(digest, { errors: "gate failed" })),
+    /errors must be an array/
+  );
+  await assert.rejects(
+    () => compileWith("no-ledger", publicationReport(digest, { ledger_head_digest: undefined })),
+    /ledger_head_digest/
+  );
+  await assert.rejects(
+    () => compileWith("bad-state", publicationReport(digest, { state: "rights-approved" })),
+    /state must be 'production-approved'/
+  );
+  await assert.rejects(
+    () => compileWith("no-assets", publicationReport(digest, { checked_assets: {} })),
+    /checked_assets is empty/
+  );
+  await assert.rejects(
+    () => compileWith("bad-warnings", publicationReport(digest, { warnings: "looks fine" })),
+    /warnings must be an array/
+  );
 
-  const passing = path.join(root, "passing-report.json");
-  const passingRaw = JSON.stringify({ passed: true, errors: [], profile_digest: digest });
-  await fs.writeFile(passing, passingRaw);
+  const passingRaw = JSON.stringify(publicationReport(digest));
+  const passingPath = path.join(root, "passing.json");
+  await fs.writeFile(passingPath, passingRaw);
   const result = await compileCardProfile({
     profilePath,
     inputDir,
     outDir: path.join(root, "out-ok"),
-    publicationReportPath: passing
+    publicationReportPath: passingPath
   });
   assert.equal(result.state, "production");
   assert.equal(result.manifest.visibility, "public");
@@ -315,6 +341,56 @@ test("production compiles only with a passing, hash-bound attestation", async ()
     reportSha256: sha256Hex(passingRaw),
     passed: true
   });
+});
+
+test("approved profile below publishable confidence is refused", async () => {
+  const profile = productionProfile();
+  profile.classification.confidence = "photo-validated";
+  await assert.rejects(() => compileFromObject(profile), /not compilable/);
+});
+
+test("lane omission cannot launder reference synthesis into production", async () => {
+  const profile = productionProfile();
+  profile.provenance.sourceType = "public-reference-synthesis";
+  // No lane declared: must refuse, never classify as production/public.
+  await assert.rejects(() => compileFromObject(profile), /must declare lane: 'reference'/);
+  assert.throws(() => classifyProfileState(profile), /must declare lane: 'reference'/);
+});
+
+test("reference lane requires reference labels, synthesis provenance, and bundle id", async () => {
+  const base = () =>
+    syntheticProfile({
+      lane: "reference",
+      classification: { family: "sp-gold-ornamental", confidence: "reference-derived" },
+      provenance: {
+        sourceType: "public-reference-synthesis",
+        rights: "Derived from public references; internal preview only.",
+        reviewStatus: "unreviewed",
+        referenceBundleId: "bundle-test-1"
+      }
+    });
+
+  const badConfidence = base();
+  badConfidence.classification.confidence = "not-a-state";
+  await assert.rejects(() => compileFromObject(badConfidence), /not a reference-lane label/);
+
+  const badSource = base();
+  badSource.provenance.sourceType = "controlled-capture";
+  await assert.rejects(
+    () => compileFromObject(badSource),
+    /sourceType must be 'public-reference-synthesis'/
+  );
+
+  const noBundle = base();
+  delete noBundle.provenance.referenceBundleId;
+  await assert.rejects(() => compileFromObject(noBundle), /referenceBundleId is required/);
+
+  const physicalConfidence = base();
+  physicalConfidence.classification.confidence = "capture-validated";
+  await assert.rejects(
+    () => compileFromObject(physicalConfidence),
+    /not a reference-lane label/
+  );
 });
 
 test("any other review state refuses with a clear error", async () => {
@@ -343,6 +419,11 @@ test("private and invalid asset URIs are refused", async () => {
   }
   assert.equal(validateAssetUri("https://cdn.example.com/mask.png").ok, false);
   assert.equal(validateAssetUri("//cdn.example.com/mask.png").ok, false);
+  // Any URI scheme is refused, with or without slashes.
+  assert.equal(validateAssetUri("data:image/svg+xml;base64,AAAA").ok, false);
+  assert.equal(validateAssetUri("mailto:someone@example.com").ok, false);
+  assert.equal(validateAssetUri("http:evil.png").ok, false);
+  assert.equal(validateAssetUri("file:local.png").ok, false);
   assert.equal(validateAssetUri("../outside.png").ok, false);
   assert.equal(validateAssetUri("img/../../outside.png").ok, false);
   assert.equal(validateAssetUri("~/masks/a.png").ok, false);
@@ -424,19 +505,41 @@ test("tier plan reduces grid tilt and folds foil+metallic into one layer", () =>
   assert.ok(tiers.grid.effectiveFoilStrength > 0);
 });
 
-test("no card-specific constants in compiler sources", async () => {
-  const sources = [
-    path.join(REPO_ROOT, "scripts/lib/profile-compiler.mjs"),
-    path.join(REPO_ROOT, "scripts/compile-card-profile.mjs")
+test("no card-specific constants in any compiler source", async () => {
+  // Enumerate ALL compiler sources: the CLI, the library entry, and every
+  // file under scripts/lib/profile-compiler/ if that directory exists. The
+  // test fails if an enumerated file cannot be read.
+  const required = [
+    path.join(REPO_ROOT, "scripts/compile-card-profile.mjs"),
+    path.join(REPO_ROOT, "scripts/lib/profile-compiler.mjs")
   ];
-  const cardIdPatterns = [/OP\d{2}-\d{3}/, /ST\d{2}-\d{3}/, /EB\d{2}-\d{3}/, /PRB\d{2}-\d{3}/];
-  for (const source of sources) {
-    const text = await fs.readFile(source, "utf8");
-    for (const pattern of cardIdPatterns) {
-      assert.ok(
-        !pattern.test(text),
-        `${path.basename(source)} contains a card-specific constant matching ${pattern}`
-      );
+  const sources = [...required];
+  const libDir = path.join(REPO_ROOT, "scripts/lib/profile-compiler");
+  try {
+    const entries = await fs.readdir(libDir, { recursive: true });
+    for (const entry of entries.sort()) {
+      const file = path.join(libDir, entry);
+      if ((await fs.stat(file)).isFile()) sources.push(file);
     }
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error; // unreadable directory = failure
+  }
+
+  const cardIdPattern = /\b(?:OP|ST|EB|PRB|P)-?\d{2}-\d{3}\b/i;
+  const cardNamePattern = /\b(?:perona|luffy|zoro|shanks|buggy|nami|sanji|hancock|yamato)\b/i;
+  // Lookup tables keyed by card-id-shaped strings, e.g. { "XX01-001": ... }.
+  const cardIdKeyPattern = /["'][A-Za-z]{1,4}-?\d{2}-\d{3}["']\s*:/;
+
+  assert.ok(sources.length >= required.length, "compiler source enumeration failed");
+  for (const source of sources) {
+    // A file that cannot be read is a hard failure, not a skipped scan.
+    const text = await fs.readFile(source, "utf8");
+    const label = path.relative(REPO_ROOT, source);
+    assert.ok(!cardIdPattern.test(text), `${label} contains a card-id constant`);
+    assert.ok(!cardNamePattern.test(text), `${label} contains a card/character name`);
+    assert.ok(
+      !cardIdKeyPattern.test(text),
+      `${label} contains a lookup table keyed by a card-id-shaped string`
+    );
   }
 });

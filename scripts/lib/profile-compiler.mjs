@@ -40,6 +40,29 @@ export const FORBIDDEN_ASSET_PATH_SEGMENTS = Object.freeze([
   "marketplace-references"
 ]);
 
+/**
+ * Confidence/source vocabularies mirrored from the profile schema conditional
+ * and src/optcg_material/review.py. The compiler enforces the same lane
+ * discipline so a profile cannot launder its lane by omission.
+ */
+export const PHYSICAL_PUBLISHABLE_CONFIDENCE = Object.freeze([
+  "capture-validated",
+  "production-validated"
+]);
+export const REFERENCE_PUBLISHABLE_CONFIDENCE = Object.freeze([
+  "reference-derived",
+  "source-supported simulation",
+  "visually fitted across real-card references"
+]);
+export const PHYSICAL_SOURCE_TYPES = Object.freeze([
+  "controlled-capture",
+  "video-sweep",
+  "licensed-photo",
+  "marketplace-reference",
+  "synthetic"
+]);
+export const REFERENCE_SOURCE_TYPE = "public-reference-synthesis";
+
 /** Material channels the CSS tiers can route, in canonical order. */
 export const CSS_CHANNELS = Object.freeze([
   "albedo",
@@ -139,6 +162,49 @@ export function classifyProfileState(profile) {
   const reviewStatus = profile.provenance?.reviewStatus;
   const confidence = profile.classification?.confidence;
 
+  // Lane may not be laundered by omission (mirrors the schema conditional and
+  // review.py): reference-synthesis provenance forces the reference lane.
+  if (sourceType === REFERENCE_SOURCE_TYPE && lane !== "reference") {
+    throw new CompileRefusal(
+      `profile with provenance.sourceType '${REFERENCE_SOURCE_TYPE}' must declare ` +
+        "lane: 'reference'; it may not be classified as a physical profile"
+    );
+  }
+
+  if (lane === "reference") {
+    // Reference-lane compilation is internal preview output only (ADR-0002)
+    // and must satisfy the reference-lane schema conditional exactly.
+    const problems = [];
+    if (sourceType !== REFERENCE_SOURCE_TYPE) {
+      problems.push(
+        `provenance.sourceType must be '${REFERENCE_SOURCE_TYPE}' (got '${sourceType}')`
+      );
+    }
+    if (!REFERENCE_PUBLISHABLE_CONFIDENCE.includes(confidence)) {
+      problems.push(
+        `classification.confidence '${confidence}' is not a reference-lane label ` +
+          `(allowed: ${REFERENCE_PUBLISHABLE_CONFIDENCE.join(", ")})`
+      );
+    }
+    if (
+      typeof profile.provenance?.referenceBundleId !== "string" ||
+      profile.provenance.referenceBundleId.length === 0
+    ) {
+      problems.push("provenance.referenceBundleId is required for reference-lane profiles");
+    }
+    if (problems.length > 0) {
+      throw new CompileRefusal(
+        `reference-lane profile is not compilable: ${problems.join("; ")}`
+      );
+    }
+    return {
+      state: "internal-reference-prototype",
+      visibility: "private-nonpublishable",
+      notice: INTERNAL_PROTOTYPE_BANNER,
+      requiresPublicationReport: false
+    };
+  }
+
   if (sourceType === "synthetic") {
     return {
       state: "synthetic",
@@ -148,18 +214,11 @@ export function classifyProfileState(profile) {
     };
   }
 
-  if (lane === "reference") {
-    // Reference-lane publication is fail-closed upstream (ADR-0002); every
-    // compilable reference profile is internal preview output only.
-    return {
-      state: "internal-reference-prototype",
-      visibility: "private-nonpublishable",
-      notice: INTERNAL_PROTOTYPE_BANNER,
-      requiresPublicationReport: false
-    };
-  }
-
-  if (reviewStatus === "approved") {
+  if (
+    reviewStatus === "approved" &&
+    PHYSICAL_PUBLISHABLE_CONFIDENCE.includes(confidence) &&
+    PHYSICAL_SOURCE_TYPES.includes(sourceType)
+  ) {
     return {
       state: "production",
       visibility: "public",
@@ -173,33 +232,73 @@ export function classifyProfileState(profile) {
       `lane='${lane}', sourceType='${sourceType}', reviewStatus='${reviewStatus}', ` +
       `confidence='${confidence}'. Compilable states: synthetic fixture ` +
       "(provenance.sourceType='synthetic'), reference lane (internal prototype, " +
-      "private output), or approved production (provenance.reviewStatus='approved' " +
-      "plus a passing publication-gate report)."
+      "private output, reference labels + bundle id required), or approved " +
+      "production (reviewStatus='approved', physical publishable confidence, " +
+      "physical sourceType, plus a passing publication-gate report)."
   );
 }
 
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
 /**
  * Validate a publication-gate attestation (the JSON report written by
- * `optcg-review check-publish --report`). The compiler does not reimplement
- * the gate; it requires proof the gate passed for the exact profile bytes.
+ * `optcg-review check-publish --report`, serialized from review.py's
+ * PublicationReport model: passed, state, errors, warnings, profile_digest,
+ * ledger_head_digest, checked_assets). The compiler does not reimplement the
+ * gate; it requires strictly-shaped proof the gate passed for the exact
+ * profile bytes. Any missing or mistyped field is a rejection.
  */
 export function validatePublicationReport(report, profileSha256) {
   const errors = [];
-  if (!report || typeof report !== "object") {
+  if (!report || typeof report !== "object" || Array.isArray(report)) {
     errors.push("publication report must be a JSON object");
     return { ok: false, errors };
   }
-  if (report.passed !== true) errors.push("publication report did not pass");
-  if (Array.isArray(report.errors) && report.errors.length > 0) {
+
+  if (report.passed !== true) {
+    errors.push("publication report did not pass (passed must be boolean true)");
+  }
+  if (!Array.isArray(report.errors)) {
+    errors.push("publication report errors must be an array");
+  } else if (report.errors.length > 0) {
     errors.push(`publication report recorded gate errors: ${report.errors.join("; ")}`);
   }
-  const digest = String(report.profile_digest ?? "").toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(digest)) {
+  if (!Array.isArray(report.warnings)) {
+    errors.push("publication report warnings must be an array");
+  }
+  if (report.state !== "production-approved") {
+    errors.push(
+      `publication report state must be 'production-approved' (got '${report.state}')`
+    );
+  }
+  if (typeof report.ledger_head_digest !== "string" ||
+      !SHA256_HEX.test(report.ledger_head_digest.toLowerCase())) {
+    errors.push("publication report ledger_head_digest must be a sha256 hex digest");
+  }
+  const checked = report.checked_assets;
+  if (!checked || typeof checked !== "object" || Array.isArray(checked)) {
+    errors.push("publication report checked_assets must be an object");
+  } else {
+    const entries = Object.entries(checked);
+    if (entries.length === 0) {
+      errors.push(
+        "publication report checked_assets is empty; the gate must have hashed " +
+          "the profile's local assets"
+      );
+    }
+    for (const [name, digest] of entries) {
+      if (typeof digest !== "string" || !SHA256_HEX.test(digest.toLowerCase())) {
+        errors.push(`publication report checked asset '${name}' lacks a sha256 hex digest`);
+      }
+    }
+  }
+  if (typeof report.profile_digest !== "string" ||
+      !SHA256_HEX.test(report.profile_digest.toLowerCase())) {
     errors.push("publication report is missing a profile_digest sha256 binding");
-  } else if (digest !== profileSha256.toLowerCase()) {
+  } else if (report.profile_digest.toLowerCase() !== profileSha256.toLowerCase()) {
     errors.push(
       "publication report is bound to a different profile: " +
-        `report=${digest}, candidate=${profileSha256}`
+        `report=${report.profile_digest.toLowerCase()}, candidate=${profileSha256}`
     );
   }
   return { ok: errors.length === 0, errors };
@@ -210,8 +309,14 @@ export function validateAssetUri(uri) {
   if (typeof uri !== "string" || uri.length === 0) {
     return { ok: false, reason: "asset uri must be a non-empty string" };
   }
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(uri) || uri.startsWith("//")) {
-    return { ok: false, reason: "remote asset URIs cannot be compiled deterministically" };
+  // Any URI scheme (remote, data:, mailto:, scheme without slashes) is
+  // refused: the compiler only accepts plain paths inside the input directory.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(uri) || uri.startsWith("//")) {
+    return {
+      ok: false,
+      reason: "asset URIs with a scheme (or protocol-relative //) are refused; " +
+        "only plain paths inside the input directory can be compiled"
+    };
   }
   if (uri.includes("\\") || uri.startsWith("~")) {
     return { ok: false, reason: "asset uri uses a disallowed path form" };

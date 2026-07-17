@@ -33,7 +33,12 @@ test("state gating: synthetic and prototype compile, unreviewed refuses", () => 
 
   const prototype = classifyProfileState({
     lane: "reference",
-    provenance: { sourceType: "public-reference-synthesis", reviewStatus: "unreviewed" }
+    classification: { confidence: "reference-derived" },
+    provenance: {
+      sourceType: "public-reference-synthesis",
+      reviewStatus: "unreviewed",
+      referenceBundleId: "bundle-1"
+    }
   });
   expect(prototype.state).toBe("internal-reference-prototype");
   expect(prototype.visibility).toBe("private-nonpublishable");
@@ -44,22 +49,55 @@ test("state gating: synthetic and prototype compile, unreviewed refuses", () => 
       provenance: { sourceType: "controlled-capture", reviewStatus: "unreviewed" }
     })
   ).toThrow(/not compilable/);
+
+  // Lane laundering by omission: reference-synthesis provenance without
+  // lane: "reference" must refuse, even when approved.
+  expect(() =>
+    classifyProfileState({
+      classification: { confidence: "production-validated" },
+      provenance: { sourceType: "public-reference-synthesis", reviewStatus: "approved" }
+    })
+  ).toThrow(/must declare lane: 'reference'/);
+
+  // Reference lane demands the reference vocabulary and a bundle id.
+  expect(() =>
+    classifyProfileState({
+      lane: "reference",
+      classification: { confidence: "not-a-state" },
+      provenance: { sourceType: "controlled-capture", reviewStatus: "unreviewed" }
+    })
+  ).toThrow(/reference-lane profile is not compilable/);
 });
 
-test("publication attestation must pass and bind the profile hash", () => {
+test("publication attestation must be strictly shaped, passing, and hash-bound", () => {
   const digest = "a".repeat(64);
+  const fullReport = (overrides = {}) => ({
+    passed: true,
+    state: "production-approved",
+    errors: [],
+    warnings: [],
+    profile_digest: digest,
+    ledger_head_digest: "b".repeat(64),
+    checked_assets: { albedo: "c".repeat(64) },
+    ...overrides
+  });
+
+  expect(validatePublicationReport(fullReport(), digest).ok).toBe(true);
+  expect(validatePublicationReport(fullReport({ passed: false }), digest).ok).toBe(false);
   expect(
-    validatePublicationReport({ passed: true, errors: [], profile_digest: digest }, digest).ok
-  ).toBe(true);
-  expect(
-    validatePublicationReport({ passed: false, errors: [], profile_digest: digest }, digest).ok
+    validatePublicationReport(fullReport({ profile_digest: "d".repeat(64) }), digest).ok
   ).toBe(false);
+  // Forged minimal report: passed + digest alone is not proof the gate ran.
+  expect(validatePublicationReport({ passed: true, profile_digest: digest }, digest).ok).toBe(
+    false
+  );
+  expect(validatePublicationReport(fullReport({ errors: "gate failed" }), digest).ok).toBe(
+    false
+  );
   expect(
-    validatePublicationReport(
-      { passed: true, errors: [], profile_digest: "b".repeat(64) },
-      digest
-    ).ok
+    validatePublicationReport(fullReport({ ledger_head_digest: undefined }), digest).ok
   ).toBe(false);
+  expect(validatePublicationReport(fullReport({ state: "unreviewed" }), digest).ok).toBe(false);
 });
 
 test("private asset URIs are refused", () => {
@@ -67,6 +105,9 @@ test("private asset URIs are refused", () => {
   expect(validateAssetUri("public-reference-bundles/b1/x.png").ok).toBe(false);
   expect(validateAssetUri("raw-captures/session/frame.png").ok).toBe(false);
   expect(validateAssetUri("https://example.com/x.png").ok).toBe(false);
+  expect(validateAssetUri("data:image/png;base64,AAAA").ok).toBe(false);
+  expect(validateAssetUri("mailto:someone@example.com").ok).toBe(false);
+  expect(validateAssetUri("http:evil.png").ok).toBe(false);
   expect(validateAssetUri("../escape.png").ok).toBe(false);
   expect(validateAssetUri("/img/masks/ok.svg").ok).toBe(true);
 });

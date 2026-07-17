@@ -46,10 +46,11 @@ Asset rules:
 - a DECLARED asset that is missing is an error (`CompileRefusal`);
 - an UNDECLARED optional channel degrades the output (fewer layers, down to
   a static albedo-only fallback);
-- refused outright: remote URIs, `..` traversal, backslashes, `~`, paths
-  escaping the input directory, and any path containing `private-media/`,
-  `public-reference-bundles/`, `raw-captures/`, `private-references/`, or
-  `marketplace-references/`;
+- refused outright: any URI with a scheme (`https:`, `data:`, `mailto:`,
+  `http:evil.png` — anything matching `^[a-z][a-z0-9+.-]*:`), protocol-relative
+  `//`, `..` traversal, backslashes, `~`, paths escaping the input directory,
+  and any path containing `private-media/`, `public-reference-bundles/`,
+  `raw-captures/`, `private-references/`, or `marketplace-references/`;
 - an `assets.*.sha256` declared in the profile must match the file content.
 
 ## State gating
@@ -60,9 +61,19 @@ The compiler reads `lane`, `classification.confidence`, and
 | Profile state | Result |
 | --- | --- |
 | `provenance.sourceType: "synthetic"` (fixture convention, see `examples/profiles/OP01-120.synthetic.example.json`) | Compiles; manifest `visibility: "synthetic-fixture"` and notice `"synthetic — not an accurate card"` (also in the CSS header). |
-| `lane: "reference"` | Compiles as internal preview; manifest `visibility: "private-nonpublishable"`, CSS header `INTERNAL REFERENCE PROTOTYPE — PRIVATE, NON-PUBLISHABLE`. Reference-lane publication remains fail-closed upstream (ADR-0002). |
-| physical lane, `provenance.reviewStatus: "approved"` | Compiles only with `--publication-report`, the JSON report emitted by `optcg-review check-publish --report`. The compiler validates `passed: true`, empty `errors`, and that `profile_digest` equals the sha256 of the exact profile bytes being compiled. The gate itself is never reimplemented — the report is proof it passed. |
+| `lane: "reference"` with `provenance.sourceType: "public-reference-synthesis"`, a `provenance.referenceBundleId`, and `classification.confidence` in exactly the three reference publication labels (`reference-derived`, `source-supported simulation`, `visually fitted across real-card references`) | Compiles as internal preview; manifest `visibility: "private-nonpublishable"`, CSS header `INTERNAL REFERENCE PROTOTYPE — PRIVATE, NON-PUBLISHABLE`. Any other reference-lane combination refuses. Reference-lane publication remains fail-closed upstream (ADR-0002). |
+| physical lane (or absent), `provenance.reviewStatus: "approved"`, `classification.confidence` in the physical publishable set (`capture-validated`, `production-validated`), and a physical `provenance.sourceType` | Compiles only with `--publication-report`, the JSON report emitted by `optcg-review check-publish --report`. The compiler validates the report's strict shape (see below); the gate itself is never reimplemented — the report is proof it passed. |
+| `provenance.sourceType: "public-reference-synthesis"` without `lane: "reference"` | Refused: lane may not be laundered by omission (mirrors the schema conditional and `review.py`). |
 | anything else | Refused with a clear error. |
+
+Publication attestation validation is strict and mirrors `review.py`'s
+`PublicationReport` model: `passed` must be boolean `true`; `errors` must be
+an empty array; `warnings` must be an array; `state` must be
+`"production-approved"`; `ledger_head_digest` must be a sha256 hex digest;
+`checked_assets` must be a non-empty object of sha256 hex digests; and
+`profile_digest` must equal the sha256 of the exact profile bytes being
+compiled. Any missing or mistyped field rejects — a forged minimal
+`{passed: true, profile_digest}` blob is not proof the gate ran.
 
 ## CSS variable set
 
