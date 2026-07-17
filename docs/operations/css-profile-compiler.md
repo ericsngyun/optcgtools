@@ -181,3 +181,10 @@ approximation, not regressions:
 - **Perspective.** The research camera has physical perspective; the CSS card
   uses CSS 3D transforms with a 900px perspective and content-bbox cropping
   in the comparison, so edge geometry differs slightly at high tilt.
+
+## CI note
+
+The seven-pose visual comparison runs in every local gate invocation and its
+artifacts are reviewed locally; it is skipped on GitHub-hosted runners only,
+because their software-GPU environment cannot complete seven WebGL captures
+within the test timeout (observed and recorded on PR #16 CI).
