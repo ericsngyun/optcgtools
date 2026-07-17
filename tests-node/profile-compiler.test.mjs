@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -542,4 +543,22 @@ test("no card-specific constants in any compiler source", async () => {
       `${label} contains a lookup table keyed by a card-id-shaped string`
     );
   }
+});
+
+test("publication report with unknown extra fields is refused", () => {
+  const profileBytes = Buffer.from(JSON.stringify({ any: "profile" }));
+  const digest = createHash("sha256").update(profileBytes).digest("hex");
+  const report = {
+    passed: true,
+    errors: [],
+    warnings: [],
+    state: "production-approved",
+    ledger_head_digest: "a".repeat(64),
+    checked_assets: { albedo: "b".repeat(64) },
+    profile_digest: digest,
+    extra: "forged",
+  };
+  const result = validatePublicationReport(report, digest);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes("unknown field 'extra'")));
 });

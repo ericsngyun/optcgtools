@@ -248,11 +248,29 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
  * gate; it requires strictly-shaped proof the gate passed for the exact
  * profile bytes. Any missing or mistyped field is a rejection.
  */
+const PUBLICATION_REPORT_ALLOWED_KEYS = new Set([
+  "passed",
+  "errors",
+  "warnings",
+  "state",
+  "ledger_head_digest",
+  "checked_assets",
+  "profile_digest",
+]);
+
 export function validatePublicationReport(report, profileSha256) {
   const errors = [];
   if (!report || typeof report !== "object" || Array.isArray(report)) {
     errors.push("publication report must be a JSON object");
     return { ok: false, errors };
+  }
+
+  // Strict shape (independent re-review finding): unknown keys are refused so
+  // a forged report cannot smuggle context past the gate consumer.
+  for (const key of Object.keys(report)) {
+    if (!PUBLICATION_REPORT_ALLOWED_KEYS.has(key)) {
+      errors.push(`publication report contains unknown field '${key}'`);
+    }
   }
 
   if (report.passed !== true) {
