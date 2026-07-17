@@ -10,6 +10,7 @@ from rich.console import Console
 
 from .models import RightsStatus
 from .promotion import (
+    PROMOTION_SCHEMA_VERSION,
     ActorType,
     Lane,
     ProfileState,
@@ -274,6 +275,128 @@ def demote_command(
         actor_type=actor_type,
         lane=lane,
         reason=reason,
+    )
+
+
+@app.command("prototype-attestation")
+def prototype_attestation_command(
+    ledger: LedgerArgument,
+    profile_id: Annotated[str, typer.Option("--profile-id")],
+    profile: Annotated[Path, typer.Option("--profile", exists=True, dir_okay=False,
+        help="The exact profile JSON the attestation binds (byte-level sha256)")],
+    output: Annotated[Path, typer.Option("--output")],
+    evidence_packet_file: Annotated[Path | None, typer.Option("--evidence-packet-file",
+        exists=True, dir_okay=False,
+        help="Evidence packet file to hash; defaults to the path recorded in the ledger")] = None,
+) -> None:
+    """Emit the canonical internal-reference-prototype attestation for the CSS
+    compiler. Verifies the full ledger (digest chain + semantic replay) and
+    refuses unless the head revision is lane=reference at
+    internal-reference-prototype with every ladder requirement recorded. The
+    JavaScript consumer validates this report's shape and byte bindings only —
+    promotion semantics live here, never in JS."""
+    import hashlib
+
+    try:
+        events = load_promotion_ledger(ledger)
+    except PromotionError as exc:
+        _fail(f"ledger failed verification: {exc}")
+        return
+    state = current_revision_state(events, profile_id)
+    if state is None:
+        _fail(f"no events for profile '{profile_id}'")
+        return
+    if state.lane is not Lane.REFERENCE:
+        _fail(f"profile '{profile_id}' head revision is lane '{state.lane}', not reference")
+        return
+    if str(state.state) != "internal-reference-prototype":
+        _fail(
+            f"profile '{profile_id}' is at state '{state.state}', not "
+            "internal-reference-prototype; no attestation can be issued"
+        )
+        return
+
+    rev_events = [
+        e for e in events if e.profile_id == profile_id and e.revision == state.revision
+    ]
+    proto_event = next(
+        (e for e in reversed(rev_events)
+         if e.action is PromotionAction.PROMOTE
+         and str(e.to_state) == "internal-reference-prototype"),
+        None,
+    )
+    if proto_event is None:
+        _fail("no internal-reference-prototype promotion event found on the head revision")
+        return
+
+    def last(attr: str):
+        return next((getattr(e, attr) for e in reversed(rev_events) if getattr(e, attr)), None)
+
+    reference_bundle_id = last("reference_bundle_id")
+    source_quality_tier = last("source_quality_tier")
+    adversarial_review = proto_event.adversarial_review or last("adversarial_review")
+    technical_reviewer = proto_event.technical_reviewer
+    rights_status = last("rights_status")
+    evidence_packet = proto_event.evidence_packet or last("evidence_packet")
+    metrics_present = any(e.metrics for e in rev_events)
+    input_hashes = sorted({h for e in rev_events for h in e.input_hashes})
+    tier_record_digest = state.fingerprint.get("bundle-tier-record")
+
+    problems = []
+    if not reference_bundle_id:
+        problems.append("no reference_bundle_id recorded")
+    if source_quality_tier not in ("A", "B"):
+        problems.append(f"source_quality_tier is '{source_quality_tier}', not A or B")
+    if source_quality_tier == "B" and not tier_record_digest:
+        problems.append("tier B without a bundle-tier-record fingerprint digest")
+    if not adversarial_review:
+        problems.append("no adversarial_review reference recorded")
+    if not technical_reviewer:
+        problems.append("no technical_reviewer on the prototype event")
+    if rights_status in (None, RightsStatus.UNKNOWN):
+        problems.append("rights_status is unresolved")
+    if not evidence_packet:
+        problems.append("no evidence_packet recorded")
+    if not metrics_present:
+        problems.append("no quantitative metrics recorded on the revision")
+    if not input_hashes:
+        problems.append("no input hashes recorded")
+    if problems:
+        _fail("ledger is missing prototype requirements: " + "; ".join(problems))
+        return
+
+    packet_path = evidence_packet_file or Path(evidence_packet)
+    if not packet_path.is_file():
+        _fail(f"evidence packet file not found: {packet_path}")
+        return
+
+    report = {
+        "schema_version": "1.0.0",
+        "report_type": "prototype-attestation",
+        "passed": True,
+        "profile_digest": hashlib.sha256(profile.read_bytes()).hexdigest(),
+        "ledger_head_digest": state.head_digest,
+        "lane": "reference",
+        "state": "internal-reference-prototype",
+        "profile_id": profile_id,
+        "revision": state.revision,
+        "reference_bundle_id": reference_bundle_id,
+        "source_quality_tier": source_quality_tier,
+        "bundle_tier_record_digest": tier_record_digest,
+        "evidence_packet": evidence_packet,
+        "evidence_packet_digest": hashlib.sha256(packet_path.read_bytes()).hexdigest(),
+        "adversarial_review": adversarial_review,
+        "metrics_present": True,
+        "rights_status": str(rights_status.value if hasattr(rights_status, "value") else rights_status),
+        "technical_reviewer": technical_reviewer,
+        "input_hashes": input_hashes,
+        "verifier_version": f"optcg-promote/{PROMOTION_SCHEMA_VERSION}",
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    console.print(
+        f"prototype attestation written to [bold]{output}[/bold] "
+        f"(profile {report['profile_digest'][:12]}, ledger head {state.head_digest[:12]})"
     )
 
 

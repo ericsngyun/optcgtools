@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from optcg_material.promotion_cli import app
@@ -339,3 +340,150 @@ def test_internal_reference_prototype_state_string_passes_through(tmp_path: Path
     result = runner.invoke(app, ["status", str(ledger), "--profile-id", "op06-093-perona-v2"])
     assert result.exit_code == 0, result.output
     assert "internal-reference-prototype" in result.output
+
+
+# --- prototype-attestation (PR #16 blocking finding) ------------------------
+
+
+def _ladder_to(ledger: Path, tmp_path: Path, stop_after: str) -> Path:
+    """Walk the Lane A ladder one state at a time up to and including
+    `stop_after`, returning the tier-record path used for binding."""
+    record = _tier_record_json(tmp_path)
+    _reference_ladder_to_supported(ledger)
+    if stop_after == "public-reference-supported":
+        return record
+    result = _promote_to_assets_proposed(ledger, ["--bundle-tier-record", str(record)])
+    assert result.exit_code == 0, result.output
+    if stop_after == "reference-assets-proposed":
+        return record
+    steps = [
+        ("reference-assets-proposed", "reference-profile-fitted", []),
+        ("reference-profile-fitted", "adversarial-review-passed",
+         ["--actor", "Eric Yun", "--actor-type", "human",
+          "--technical-reviewer", "Eric Yun",
+          "--adversarial-review", "review/critic-verdict.md"]),
+        ("adversarial-review-passed", "internal-reference-prototype",
+         ["--actor", "Eric Yun", "--actor-type", "human",
+          "--technical-reviewer", "Eric Yun",
+          "--adversarial-review", "review/critic-verdict.md"]),
+    ]
+    for from_state, to_state, extra in steps:
+        result = runner.invoke(app, [
+            "promote", str(ledger),
+            "--profile-id", "op06-093-perona-v2",
+            "--from-state", from_state, "--to-state", to_state,
+            "--actor", "capture-operator", "--actor-type", "agent",
+            "--revision", "1", "--lane", "reference",
+            "--reference-bundle-id", "op06-093-perona-v2-en-b001",
+            "--input-hash", HASH,
+            "--source-quality-tier", "B",
+            "--bundle-tier-record", str(record),
+            "--metrics", '{"consistency": 0.81}',
+            "--evidence-packet", "docs/agent-ops/evidence-packets/synthetic.json",
+            "--rights-status", "restricted-research",
+            *extra,
+        ])
+        assert result.exit_code == 0, (to_state, result.output)
+        if stop_after == to_state:
+            return record
+    return record
+
+
+def _attest(ledger: Path, tmp_path: Path, profile_id: str = "op06-093-perona-v2"):
+    profile = tmp_path / "profile.json"
+    profile.write_text('{"card": {"id": "OP06-093"}}', encoding="utf-8")
+    packet = tmp_path / "evidence.json"
+    packet.write_text('{"synthetic": true}', encoding="utf-8")
+    out = tmp_path / "prototype-attestation.json"
+    result = runner.invoke(app, [
+        "prototype-attestation", str(ledger),
+        "--profile-id", profile_id,
+        "--profile", str(profile),
+        "--evidence-packet-file", str(packet),
+        "--output", str(out),
+    ])
+    return result, out, profile, packet
+
+
+def test_prototype_attestation_full_ladder_positive(tmp_path: Path) -> None:
+    import hashlib
+    import json as jsonlib
+
+    ledger = tmp_path / "promotions.jsonl"
+    _ladder_to(ledger, tmp_path, "internal-reference-prototype")
+    result, out, profile, packet = _attest(ledger, tmp_path)
+    assert result.exit_code == 0, result.output
+    report = jsonlib.loads(out.read_text())
+    expected_keys = {
+        "schema_version", "report_type", "passed", "profile_digest",
+        "ledger_head_digest", "lane", "state", "profile_id", "revision",
+        "reference_bundle_id", "source_quality_tier", "bundle_tier_record_digest",
+        "evidence_packet", "evidence_packet_digest", "adversarial_review",
+        "metrics_present", "rights_status", "technical_reviewer",
+        "input_hashes", "verifier_version",
+    }
+    assert set(report) == expected_keys
+    assert report["passed"] is True
+    assert report["report_type"] == "prototype-attestation"
+    assert report["lane"] == "reference"
+    assert report["state"] == "internal-reference-prototype"
+    assert report["profile_id"] == "op06-093-perona-v2"
+    assert report["source_quality_tier"] == "B"
+    assert report["bundle_tier_record_digest"] and len(report["bundle_tier_record_digest"]) == 64
+    assert report["profile_digest"] == hashlib.sha256(profile.read_bytes()).hexdigest()
+    assert report["evidence_packet_digest"] == hashlib.sha256(packet.read_bytes()).hexdigest()
+    assert report["technical_reviewer"] == "Eric Yun"
+    assert report["adversarial_review"] == "review/critic-verdict.md"
+    assert report["rights_status"] == "restricted-research"
+    assert report["metrics_present"] is True
+    assert report["input_hashes"] == [HASH]
+    assert report["verifier_version"].startswith("optcg-promote/")
+
+
+@pytest.mark.parametrize("stop_after", [
+    "hypothesis-only",
+    "public-reference-supported",
+    "reference-profile-fitted",
+    "adversarial-review-passed",
+])
+def test_prototype_attestation_refuses_early_states(tmp_path: Path, stop_after: str) -> None:
+    ledger = tmp_path / "promotions.jsonl"
+    if stop_after == "hypothesis-only":
+        result = runner.invoke(app, [
+            "open-revision", str(ledger),
+            "--profile-id", "op06-093-perona-v2",
+            "--actor", "capture-operator", "--actor-type", "agent",
+            "--revision", "1", "--lane", "reference",
+        ])
+        assert result.exit_code == 0, result.output
+    else:
+        _ladder_to(ledger, tmp_path, stop_after)
+    result, out, _, _ = _attest(ledger, tmp_path)
+    assert result.exit_code == 1
+    assert "no attestation can be issued" in result.output
+    assert not out.exists()
+
+
+def test_prototype_attestation_refuses_wrong_profile_and_physical_lane(tmp_path: Path) -> None:
+    ledger = tmp_path / "promotions.jsonl"
+    _ladder_to(ledger, tmp_path, "internal-reference-prototype")
+    result, _out, _, _ = _attest(ledger, tmp_path, profile_id="some-other-profile")
+    assert result.exit_code == 1
+    assert "no events" in result.output
+
+    physical = tmp_path / "physical.jsonl"
+    open_revision(physical)
+    result2, _out2, _, _ = _attest(physical, tmp_path, profile_id="op05-119-luffy")
+    assert result2.exit_code == 1
+    assert "lane" in result2.output
+
+
+def test_prototype_attestation_refuses_tampered_ledger(tmp_path: Path) -> None:
+    ledger = tmp_path / "promotions.jsonl"
+    _ladder_to(ledger, tmp_path, "internal-reference-prototype")
+    lines = ledger.read_text().splitlines()
+    lines[1] = lines[1].replace("Eric Yun", "Someone Else")
+    ledger.write_text("\n".join(lines) + "\n")
+    result, _out, _, _ = _attest(ledger, tmp_path)
+    assert result.exit_code == 1
+    assert "ledger failed verification" in result.output

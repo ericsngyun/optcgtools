@@ -1,0 +1,59 @@
+{
+  "task_id": "css-compiler-prototype-attestation",
+  "objective": "Close the PR #16 blocking finding: reference-lane (internal-reference-prototype) compilation currently trusts profile metadata only. Add a canonical Python prototype-attestation command that verifies and semantically replays the promotion ledger and emits a strict JSON report; the CSS compiler consumes it via --prototype-report and refuses reference compilation without it. JavaScript validates attestation shape and byte bindings only \u2014 it never reproduces the promotion ladder.",
+  "current_state": "PR #16 branch a4d1e49: compiler classifies lane:reference profiles as internal-reference-prototype from profile fields alone; a test compiles a reviewStatus:unreviewed reference profile successfully (the proven bypass). verify_promotion_ledger already performs semantic replay. Production compilation already consumes a strict check-publish attestation.",
+  "inputs": [
+    "docs/agent-ops/approval-state-machine.md",
+    "src/optcg_material/promotion.py",
+    "src/optcg_material/promotion_cli.py",
+    "scripts/lib/profile-compiler.mjs"
+  ],
+  "allowed_paths": [
+    "src/optcg_material/promotion_cli.py",
+    "src/optcg_material/promotion.py",
+    "tests/test_promotion_cli.py",
+    "tests/test_promotion.py",
+    "scripts/lib/profile-compiler.mjs",
+    "scripts/compile-card-profile.mjs",
+    "tests-node/profile-compiler.test.mjs",
+    "tests-web/profile-compiler.spec.js",
+    "docs/operations/css-profile-compiler.md"
+  ],
+  "forbidden_paths": [
+    "schemas/",
+    "docs/agent-ops/*.schema.json",
+    "src/optcg_material/review.py",
+    "src/lib/",
+    "public/",
+    "scripts/agent-gates/"
+  ],
+  "assumptions": [
+    "FIXED ATTESTATION CONTRACT (both sides implement exactly this; unknown fields rejected by the consumer): schema_version '1.0.0', report_type 'prototype-attestation', passed (bool), profile_digest (hex64 sha256 of exact profile bytes), ledger_head_digest (hex64), lane 'reference', state 'internal-reference-prototype', profile_id (slug), revision (int>=1), reference_bundle_id (slug), source_quality_tier ('A'|'B'), bundle_tier_record_digest (hex64, REQUIRED when tier B, null when A), evidence_packet (string), evidence_packet_digest (hex64), adversarial_review (string), metrics_present (true), rights_status (resolved string, never 'unknown'), technical_reviewer (non-empty string), input_hashes (non-empty hex64 array), verifier_version (string).",
+    "Generator: new `optcg-promote prototype-attestation <ledger> --profile-id --profile <profile.json> [--evidence-packet-file <path>] --output <report.json>` \u2014 loads the ledger with full verification (digest chain + semantic replay), requires head revision lane=reference state=internal-reference-prototype, extracts fields from the ledger events (tier + bundle-tier-record fingerprint from the tier event; adversarial_review, technical_reviewer, rights_status, input_hashes, evidence_packet, metrics from their recording events), computes profile and evidence-packet digests, emits the contract JSON. Refuses (non-zero exit, no report) for any other state/lane or missing requirement.",
+    "Existing behavior unchanged: synthetic compilation, production check-publish attestation, physical semantics, determinism, private-asset gates, CSS routing, HoloCard tiers."
+  ],
+  "acceptance_criteria": [
+    "Reference-lane compilation REFUSES without --prototype-report; the old metadata-only path is gone; the test expecting an unreviewed reference profile to compile is REPLACED by a refusal test.",
+    "JS consumer validates strict shape (allowed-key set, typed fields) and bindings: profile_digest == sha256(profile bytes), profile_id matches the compiled profile's ID, reference_bundle_id matches provenance.referenceBundleId, lane/state/report_type exact, passed===true, unknown fields refused, physical-lane or check-publish-shaped reports refused for reference compilation.",
+    "Python generator walks the canonical verifier: a synthetic Lane A ledger promoted one state at a time to internal-reference-prototype yields a valid attestation (positive test); ledgers stopped at hypothesis, public-reference-supported, reference-profile-fitted, or adversarial-review-passed are refused (negative tests).",
+    "All 18 directive negative cases covered across python+node suites (no report; metadata-only profile; the four early-ledger states; forged report; stale profile digest; wrong profile id; wrong bundle id; wrong ledger head; unresolved rights; missing evidence packet; missing adversarial review; missing reviewer; tier-B without/with-unbound record digest; unknown fields; physical-lane report).",
+    "One end-to-end node test shells `uv run optcg-promote prototype-attestation` against a fixture ledger built in-test via the CLI and compiles with the real report.",
+    "Full validation green: npm run test:node (wire if absent), npm run build, npm run test:web, uv run ruff check src tests, uv run pytest, scripts/agent-gates/run-quality-gates.sh."
+  ],
+  "required_tests": [
+    "uv run pytest tests/test_promotion_cli.py tests/test_promotion.py",
+    "node --test tests-node/",
+    "npx playwright test tests-web/profile-compiler.spec.js",
+    "scripts/agent-gates/run-quality-gates.sh"
+  ],
+  "stop_conditions": [
+    "Any requirement would need editing forbidden paths or reimplementing ladder semantics in JavaScript.",
+    "Any pre-existing test outside the named bypass test needs behavioral modification."
+  ],
+  "expected_outputs": [
+    "optcg-promote prototype-attestation command + python tests",
+    "JS --prototype-report consumer + node/web tests",
+    "Updated compiler docs (attestation table)"
+  ],
+  "reviewer": "Eric Yun"
+}

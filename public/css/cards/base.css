@@ -77,6 +77,7 @@
 .card__foil-base,
 .card__shine,
 .card__etch,
+.card__suppression,
 .card__glare {
   transform: translateZ(1px);
 }
@@ -84,7 +85,8 @@
 .card__foil-base { z-index: 2; }
 .card__shine { z-index: 3; }
 .card__etch { z-index: 4; }
-.card__glare { z-index: 5; }
+.card__suppression { z-index: 5; display: none; }
+.card__glare { z-index: 6; }
 
 /*
   The original pokemon-cards-css architecture used a single mask for the
@@ -94,6 +96,7 @@
 .card.masked .card__foil-base,
 .card.masked .card__shine,
 .card.masked .card__etch,
+.card.masked .card__suppression,
 .card.masked .card__glare {
   -webkit-mask-size: cover;
   mask-size: cover;
@@ -118,9 +121,27 @@
   mask-image: var(--texture-mask, var(--mask));
 }
 
+.card.masked .card__suppression {
+  -webkit-mask-image: var(--suppression-mask, var(--mask));
+  mask-image: var(--suppression-mask, var(--mask));
+}
+
 .card.masked .card__glare {
   -webkit-mask-image: var(--gloss-mask, var(--mask));
   mask-image: var(--gloss-mask, var(--mask));
+}
+
+/* Offscreen suspension (grid tier drives data-suspended via the component). */
+.card[data-suspended="true"] .card__rotator {
+  transform: none;
+}
+
+.card[data-suspended="true"] .card__foil-base,
+.card[data-suspended="true"] .card__shine,
+.card[data-suspended="true"] .card__etch,
+.card[data-suspended="true"] .card__suppression,
+.card[data-suspended="true"] .card__glare {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -130,7 +151,8 @@
 
   .card__shine,
   .card__glare,
-  .card__etch {
+  .card__etch,
+  .card__suppression {
     display: none;
   }
 }

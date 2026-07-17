@@ -14,7 +14,9 @@
     },
     "geometry-registration": {
       "owner": "capture-operator",
-      "paths": ["src/optcg_material/geometry.py"]
+      "paths": [
+        "src/optcg_material/geometry.py"
+      ]
     },
     "segmentation": {
       "owner": "segmentation-specialist",
@@ -68,7 +70,10 @@
       "paths": [
         "src/lib/components/HoloCard.svelte",
         "src/lib/components/CardProxy.svelte",
-        "public/css/cards/"
+        "public/css/cards/",
+        "scripts/compile-card-profile.mjs",
+        "scripts/lib/profile-compiler.mjs",
+        "scripts/lib/profile-compiler/"
       ]
     },
     "review-and-promotion": {
