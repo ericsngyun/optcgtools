@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "1.0.0",
+  "card": {
+    "id": "SYNTHETIC-001",
+    "name": "Synthetic Material Fixture",
+    "game": "one-piece-card-game",
+    "set": "LAB",
+    "rarity": "fixture",
+    "language": "EN",
+    "printVariant": "synthetic"
+  },
+  "classification": {
+    "family": "sp-gold-ornamental",
+    "confidence": "hypothesis",
+    "evidence": [
+      "Synthetic public fixture only",
+      "Not calibrated to an official One Piece Card Game card"
+    ]
+  },
+  "assets": {
+    "albedo": {
+      "uri": "/img/demo/optcg-placeholder.svg",
+      "colorSpace": "srgb"
+    },
+    "foilMask": {
+      "uri": "/img/masks/sp-generic-mask.svg",
+      "colorSpace": "linear"
+    },
+    "metallicMask": {
+      "uri": "/img/masks/sp-generic-mask.svg",
+      "colorSpace": "linear"
+    },
+    "glossMask": {
+      "uri": "/img/masks/sp-generic-mask.svg",
+      "colorSpace": "linear"
+    },
+    "textureMask": {
+      "uri": "/img/masks/sp-generic-mask.svg",
+      "colorSpace": "linear"
+    },
+    "normalMap": null,
+    "directionMap": null,
+    "suppressionMask": null,
+    "cardBack": {
+      "uri": "/img/demo/card-back.svg",
+      "colorSpace": "srgb"
+    }
+  },
+  "renderer": {
+    "cssPreset": "sp-etched",
+    "webglPreset": "physical-reference-v1",
+    "qualityTier": "research",
+    "foilStrength": 0.72,
+    "metallicStrength": 0.78,
+    "glossStrength": 0.88,
+    "textureStrength": 0.42,
+    "roughness": 0.48,
+    "clearcoat": 1.0,
+    "clearcoatRoughness": 0.14,
+    "iridescence": 0.82,
+    "iridescenceIor": 1.32,
+    "iridescenceThicknessMinNm": 120,
+    "iridescenceThicknessMaxNm": 470,
+    "anisotropy": 0.52,
+    "anisotropyRotationRad": 0,
+    "maxTiltDeg": 18
+  },
+  "provenance": {
+    "sourceType": "synthetic",
+    "rights": "Synthetic fixture created for the public test bench.",
+    "reviewStatus": "unreviewed"
+  }
+}

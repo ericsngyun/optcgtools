@@ -1,0 +1,50 @@
+{
+  "task_id": "two-lane-p1-reference-fitting",
+  "objective": "Extend analysis-by-synthesis fitting to public references: estimate per-source card pose, light direction, glare center, light hardness, exposure scale, and confidence weight; fit ONE profile across all usable observations; reject profiles that match only one privileged reference; emit per-reference candidate renders, difference images, regional error, highlight-trajectory comparison for sequences/video, cross-reference consistency score, and an outlier report.",
+  "current_state": "Schema frozen by two-lane-p0-state-machine (docs/agent-ops/reference-fitting-report.schema.json). Physical-lane fitting.py and the deterministic render sequence scripts exist and must remain untouched; this is a new module.",
+  "inputs": [
+    "docs/agent-ops/adr-0002-two-lane-reference-synthesis.md",
+    "docs/agent-ops/reference-fitting-report.schema.json",
+    "src/optcg_material/fitting.py"
+  ],
+  "allowed_paths": [
+    "src/optcg_material/reference_fitting.py",
+    "src/optcg_material/reference_fitting_cli.py",
+    "tests/test_reference_fitting.py"
+  ],
+  "forbidden_paths": [
+    "src/optcg_material/fitting.py",
+    "src/optcg_material/fitting_cli.py",
+    "src/optcg_material/candidate.py",
+    "src/optcg_material/promotion.py",
+    "src/lib/",
+    "scripts/",
+    "docs/",
+    "AGENTS.md",
+    "pyproject.toml"
+  ],
+  "assumptions": [
+    "Inputs conform to the frozen bundle/appearance schemas; tests synthesize multi-source observation fixtures.",
+    "Renderer evaluation may reuse fitting.py public API read-only; deterministic planar card geometry only — no geometry inference from photos."
+  ],
+  "acceptance_criteria": [
+    "Single profile fitted jointly across all usable sources with per-source confidence weights; deterministic given fixed inputs.",
+    "A profile whose error is low on exactly one reference and high elsewhere is rejected with single_reference_overfit_flag and named privileged references (dedicated test).",
+    "Report includes per-source estimates, difference images, regional error, highlight-trajectory comparison when sequential frames exist, cross-reference consistency score, aggregate loss, and outlier report; validates against the frozen schema.",
+    "Profile file hash (blake3) bound into the report.",
+    "No output claims physical measurement; labels restricted to reference-derived vocabulary."
+  ],
+  "required_tests": [
+    "uv run pytest tests/test_reference_fitting.py",
+    "uv run ruff check src tests"
+  ],
+  "stop_conditions": [
+    "The observed material response exceeds what the renderer model can represent (record diagnostic; do not extend the renderer here).",
+    "Any requirement would need edits outside allowed_paths."
+  ],
+  "expected_outputs": [
+    "reference_fitting.py + reference_fitting_cli.py (optcg-reference-fit)",
+    "Overfit-rejection, determinism, consistency-score, and schema tests"
+  ],
+  "reviewer": "Eric Yun"
+}

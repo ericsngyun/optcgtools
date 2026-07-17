@@ -1,0 +1,58 @@
+{
+  "task_id": "two-lane-p1-reference-bundle",
+  "objective": "Implement the public-reference bundle tooling: manifest/source-record/quality-score/acquisition-task models, deterministic source scoring and A/B/C tiering, the optcg-reference CLI, and the reference-image normalization pipeline (corner detection, rectification, registration to a clean English reference, sleeve/slab interference flagging, conservative exposure/WB metadata, weak-alignment rejection).",
+  "current_state": "Schemas frozen by two-lane-p0-state-machine (docs/agent-ops/reference-bundle.schema.json, reference-source-quality.schema.json, acquisition-task.schema.json). geometry.py provides corner detection / rectification / residual registration for the physical lane; no bundle tooling exists.",
+  "inputs": [
+    "docs/agent-ops/adr-0002-two-lane-reference-synthesis.md",
+    "docs/agent-ops/reference-bundle.schema.json",
+    "docs/agent-ops/reference-source-quality.schema.json",
+    "docs/agent-ops/acquisition-task.schema.json"
+  ],
+  "allowed_paths": [
+    "src/optcg_material/reference_bundle.py",
+    "src/optcg_material/reference_bundle_cli.py",
+    "src/optcg_material/reference_normalize.py",
+    "src/optcg_material/reference_normalize_cli.py",
+    "tests/test_reference_bundle.py",
+    "tests/test_reference_normalize.py"
+  ],
+  "forbidden_paths": [
+    "src/optcg_material/promotion.py",
+    "src/optcg_material/review.py",
+    "src/optcg_material/geometry.py",
+    "src/optcg_material/models.py",
+    "src/optcg_material/session.py",
+    "docs/",
+    "AGENTS.md",
+    "pyproject.toml",
+    "scripts/",
+    "src/lib/"
+  ],
+  "assumptions": [
+    "geometry.py public API (corner detection, warp, residual registration) is imported read-only and is sufficient; if it is not, stop and report instead of editing it.",
+    "Bundle roots live under ~/GenkiStuff/optcg-reference-lab/public-reference-bundles/ and are never committed; tests use synthetic fixtures in temp dirs only."
+  ],
+  "acceptance_criteria": [
+    "Manifest, source-record, quality-score, tier, and acquisition-task models round-trip and validate against the frozen schemas.",
+    "Scoring is deterministic with documented weights; tiering yields A/B/C; only Tier A or human-reviewed Tier B set eligible_for_profile true.",
+    "Blocked retrieval creates an acquisition-task record retaining the URL; no code path automates around anti-bot controls (no header spoofing, no scraping fallbacks).",
+    "Normalization preserves original file hashes, writes normalized outputs alongside originals, flags sleeve/slab/toploader interference regions, records conservative exposure/white-balance metadata, and rejects weak alignment with a diagnostic instead of accepting it.",
+    "No global normalization step that removes real per-source foil appearance differences.",
+    "Every accepted media file is hash-recorded (blake3) in the manifest."
+  ],
+  "required_tests": [
+    "uv run pytest tests/test_reference_bundle.py tests/test_reference_normalize.py",
+    "uv run ruff check src tests"
+  ],
+  "stop_conditions": [
+    "geometry.py public API is insufficient for reference-image rectification.",
+    "Any requirement would need edits outside allowed_paths.",
+    "A test would require real marketplace imagery (synthetic fixtures only)."
+  ],
+  "expected_outputs": [
+    "reference_bundle.py + reference_bundle_cli.py (optcg-reference: init-bundle, add-source, add-media, acquisition-task, score, tier, validate)",
+    "reference_normalize.py + reference_normalize_cli.py (optcg-reference-normalize)",
+    "Unit tests with synthetic fixtures"
+  ],
+  "reviewer": "Eric Yun"
+}

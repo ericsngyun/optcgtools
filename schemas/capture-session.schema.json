@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://genkistuff.local/schemas/capture-session.schema.json",
+  "title": "Authenticated OPTCG Capture Session",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "session_id",
+    "created_at",
+    "updated_at",
+    "card",
+    "camera",
+    "rights",
+    "authentication",
+    "files"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "session_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,95}$"
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "pipeline_commit": { "type": ["string", "null"], "maxLength": 64 },
+    "notes": { "type": ["string", "null"], "maxLength": 4000 },
+    "card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["card_id", "name", "set_code", "language"],
+      "properties": {
+        "card_id": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "set_code": { "type": "string", "minLength": 2, "maxLength": 32 },
+        "rarity_label": { "type": ["string", "null"], "maxLength": 80 },
+        "language": { "enum": ["EN", "JP", "OTHER"] },
+        "print_run": { "type": ["string", "null"], "maxLength": 120 },
+        "finish_family_hypothesis": {
+          "type": ["string", "null"],
+          "maxLength": 120
+        }
+      }
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operator", "exposure_locked", "focus_locked", "raw_available"],
+      "properties": {
+        "operator": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "camera_model": { "type": ["string", "null"], "maxLength": 160 },
+        "lens": { "type": ["string", "null"], "maxLength": 160 },
+        "focal_length_mm": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+        "camera_distance_mm": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+        "white_balance_kelvin": { "type": ["integer", "null"], "minimum": 1500, "maximum": 15000 },
+        "exposure_locked": { "type": "boolean" },
+        "focus_locked": { "type": "boolean" },
+        "raw_available": { "type": "boolean" },
+        "notes": { "type": ["string", "null"], "maxLength": 2000 }
+      }
+    },
+    "rights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "status", "public_derivatives_allowed", "public_albedo_allowed"],
+      "properties": {
+        "owner": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "status": {
+          "enum": ["owned-capture", "licensed", "restricted-research", "unknown"]
+        },
+        "public_derivatives_allowed": { "type": "boolean" },
+        "public_albedo_allowed": { "type": "boolean" },
+        "license_reference": { "type": ["string", "null"], "maxLength": 500 },
+        "notes": { "type": ["string", "null"], "maxLength": 2000 }
+      }
+    },
+    "authentication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["verified", "pending", "rejected"] },
+        "method": { "type": ["string", "null"], "maxLength": 500 },
+        "verifier": { "type": ["string", "null"], "maxLength": 160 },
+        "verified_at": { "type": ["string", "null"], "format": "date-time" },
+        "evidence_reference": { "type": ["string", "null"], "maxLength": 500 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "verified" } } },
+          "then": { "required": ["method", "verifier"] }
+        }
+      ]
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "kind", "blake3", "bytes", "media_type", "direction", "metadata"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1, "not": { "pattern": "(^/|\\.\\.|://|\\\\)" } },
+          "kind": {
+            "enum": [
+              "albedo",
+              "back",
+              "tilt-x",
+              "tilt-y",
+              "tilt-x-video",
+              "tilt-y-video",
+              "light-hard",
+              "light-soft",
+              "rake",
+              "macro"
+            ]
+          },
+          "blake3": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "bytes": { "type": "integer", "minimum": 1 },
+          "media_type": { "type": "string", "minLength": 3, "maxLength": 120 },
+          "width": { "type": ["integer", "null"], "minimum": 1 },
+          "height": { "type": ["integer", "null"], "minimum": 1 },
+          "captured_at": { "type": ["string", "null"], "format": "date-time" },
+          "angle_degrees": { "type": ["number", "null"], "minimum": -180, "maximum": 180 },
+          "direction": { "enum": ["left", "right", "top", "bottom", "front", "none"] },
+          "light_label": { "type": ["string", "null"], "maxLength": 120 },
+          "source_filename": { "type": ["string", "null"], "maxLength": 255 },
+          "metadata": { "type": "object" }
+        }
+      }
+    }
+  }
+}

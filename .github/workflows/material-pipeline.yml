@@ -1,0 +1,145 @@
+name: Material pipeline
+
+on:
+  push:
+    branches: [holo-lab, "feat/**"]
+  pull_request:
+    branches: [main, holo-lab]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: material-pipeline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agent-gates:
+    name: Agent anti-slop gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Block private or unlicensed media
+        run: python3 scripts/agent-gates/check-private-media.py --scan
+
+      - name: Block committed generated artifacts
+        run: git ls-files -z | xargs -0 python3 scripts/agent-gates/check-generated-artifacts.py
+
+      - name: Approved assets are append-only (PR diff)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=200 origin "$BASE_REF"
+          git diff --name-status -M "origin/$BASE_REF...HEAD" \
+            | python3 scripts/agent-gates/check-approved-assets.py --diff-stdin
+
+  python:
+    name: Python capture pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install project
+        run: uv sync --group dev
+
+      - name: Lint
+        id: lint
+        continue-on-error: true
+        run: uv run ruff check src tests --output-format=json > ruff-report.json
+
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ruff-report-${{ github.run_id }}
+          path: ruff-report.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce lint result
+        if: steps.lint.outcome == 'failure'
+        run: |
+          uv run ruff check src tests
+          exit 1
+
+      - name: Compile
+        run: uv run python -m compileall -q src tests
+
+      - name: Test
+        run: uv run pytest --cov=optcg_material --cov-report=term-missing
+
+      - name: Validate tracked promotion ledgers
+        run: |
+          files=$(git ls-files '*promotion-log*.jsonl' '*promotions*.jsonl')
+          if [ -n "$files" ]; then
+            uv run python scripts/agent-gates/check-profile-promotion.py $files
+          else
+            echo "no tracked promotion ledgers"
+          fi
+
+      - name: Validate tracked evidence packets
+        run: |
+          files=$(git ls-files '*evidence-packet*.json' 'evidence-packets/*.json' | grep -v '\.schema\.json$' || true)
+          if [ -n "$files" ]; then
+            uv run python scripts/agent-gates/check-evidence-packet.py $files
+          else
+            echo "no tracked evidence packets"
+          fi
+
+  web:
+    name: Holo lab browser and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify upstream source pin
+        run: npm run check:source-pin
+
+      - name: Build
+        run: npm run build
+
+      - name: Browser smoke test
+        run: npm run test:web
+
+      - name: Upload browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-diagnostics-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7

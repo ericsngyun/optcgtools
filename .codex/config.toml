@@ -1,0 +1,56 @@
+# Codex adapter for the OPTCG Physical Material Lab.
+#
+# AGENTS.md at the repository root is the canonical constitution; this file
+# only adapts it for Codex and must not define divergent policy. Key names
+# below follow the Codex CLI config schema current at authoring time — verify
+# against the installed Codex version per docs/agent-ops/toolchain-validation.md
+# before relying on enforcement.
+
+# Conservative defaults: ask before privileged actions, write only inside the
+# workspace, no network without approval.
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = false
+
+# Bounded orchestration: no deep agent trees, few concurrent threads.
+[agents]
+max_depth = 1
+max_threads = 3
+
+[agents.repo-auditor]
+description = "Read-only audit of implementation state, tests, CI, and ledgers. Never edits files."
+config_file = ".codex/agents/repo-auditor.toml"
+
+[agents.capture-operator]
+description = "Capture ingestion/provenance/registration tooling. Owns models/provenance/quality/session modules. Workspace-write, own branch only."
+config_file = ".codex/agents/capture-operator.toml"
+
+[agents.reference-researcher]
+description = "Read-only lawful card research; observation/inference separation; never commits imagery."
+config_file = ".codex/agents/reference-researcher.toml"
+
+[agents.registration-reviewer]
+description = "Read-only registration quality review; rejects frame swim and weak homographies."
+config_file = ".codex/agents/registration-reviewer.toml"
+
+[agents.segmentation-specialist]
+description = "Segmentation backends and contracts (SAM 2.1 baseline). Owns semantic modules and segmentation package."
+config_file = ".codex/agents/segmentation-specialist.toml"
+
+[agents.material-forensics]
+description = "Measured material-map extraction. Owns material_maps and material_cli."
+config_file = ".codex/agents/material-forensics.toml"
+
+[agents.renderer-fitter]
+description = "Research renderer, deterministic renders, analysis-by-synthesis fitting. Owns src/lib/research and fitting modules."
+config_file = ".codex/agents/renderer-fitter.toml"
+
+[agents.adversarial-critic]
+description = "Read-only adversarial visual review; returns PASS/REVISE/REJECT/INSUFFICIENT_EVIDENCE."
+config_file = ".codex/agents/adversarial-critic.toml"
+
+[agents.release-gate]
+description = "Read-only publication gatekeeper; verifies ledgers, packets, hashes, rights before release."
+config_file = ".codex/agents/release-gate.toml"

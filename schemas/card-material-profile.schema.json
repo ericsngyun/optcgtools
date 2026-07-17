@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://genkistuff.com/schemas/card-material-profile.schema.json",
+  "title": "GenkiStuff Card Material Profile",
+  "type": "object",
+  "required": ["schemaVersion", "card", "classification", "assets", "renderer", "provenance"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "lane": { "enum": ["physical", "reference"] },
+    "card": {
+      "type": "object",
+      "required": ["id", "game", "language"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "game": { "const": "one-piece-card-game" },
+        "set": { "type": "string" },
+        "rarity": { "type": "string" },
+        "language": { "enum": ["EN", "JP", "other"] },
+        "printVariant": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "classification": {
+      "type": "object",
+      "required": ["family", "confidence"],
+      "properties": {
+        "family": {
+          "enum": [
+            "rare-holo-standard",
+            "sr-foil-basic",
+            "sr-textured",
+            "alt-art-coated",
+            "alt-art-textured",
+            "manga-prismatic-panel",
+            "manga-gold-metallic",
+            "sp-gold-ornamental",
+            "sp-manga-scene",
+            "sp-color-field",
+            "leader-parallel-textured",
+            "treasure-rare",
+            "unknown"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "hypothesis",
+            "photo-validated",
+            "capture-validated",
+            "production-validated",
+            "reference-derived",
+            "source-supported simulation",
+            "visually fitted across real-card references"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "assets": {
+      "type": "object",
+      "required": ["albedo"],
+      "properties": {
+        "albedo": { "$ref": "#/$defs/asset" },
+        "foilMask": { "$ref": "#/$defs/asset" },
+        "metallicMask": { "$ref": "#/$defs/asset" },
+        "glossMask": { "$ref": "#/$defs/asset" },
+        "textureMask": { "$ref": "#/$defs/asset" },
+        "suppressionMask": { "$ref": "#/$defs/asset" },
+        "normalMap": { "$ref": "#/$defs/asset" },
+        "directionMap": { "$ref": "#/$defs/asset" },
+        "regionMask": { "$ref": "#/$defs/asset" },
+        "cardBack": { "$ref": "#/$defs/asset" },
+        "gltf": { "$ref": "#/$defs/asset" }
+      },
+      "additionalProperties": false
+    },
+    "renderer": {
+      "type": "object",
+      "required": ["cssPreset", "qualityTier"],
+      "properties": {
+        "cssPreset": { "type": "string" },
+        "webglPreset": { "type": "string" },
+        "qualityTier": { "enum": ["grid", "detail", "hero", "research"] },
+        "foilStrength": { "type": "number", "minimum": 0, "maximum": 2 },
+        "metallicStrength": { "type": "number", "minimum": 0, "maximum": 2 },
+        "glossStrength": { "type": "number", "minimum": 0, "maximum": 2 },
+        "textureStrength": { "type": "number", "minimum": 0, "maximum": 2 },
+        "roughness": { "type": "number", "minimum": 0, "maximum": 1 },
+        "clearcoat": { "type": "number", "minimum": 0, "maximum": 1 },
+        "clearcoatRoughness": { "type": "number", "minimum": 0, "maximum": 1 },
+        "iridescence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "iridescenceIor": { "type": "number", "minimum": 1 },
+        "iridescenceThicknessMinNm": { "type": "number", "minimum": 0 },
+        "iridescenceThicknessMaxNm": { "type": "number", "minimum": 0 },
+        "anisotropy": { "type": "number", "minimum": 0, "maximum": 1 },
+        "anisotropyRotationRad": { "type": "number" },
+        "maxTiltDeg": { "type": "number", "minimum": 0, "maximum": 30 }
+      },
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["sourceType", "rights", "reviewStatus"],
+      "properties": {
+        "sourceType": { "enum": ["controlled-capture", "video-sweep", "licensed-photo", "marketplace-reference", "synthetic", "public-reference-synthesis"] },
+        "rights": { "type": "string" },
+        "captureSession": { "type": "string" },
+        "referenceBundleId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,95}$" },
+        "sourceUrls": { "type": "array", "items": { "type": "string", "format": "uri" } },
+        "reviewStatus": { "enum": ["unreviewed", "needs-revision", "approved"] },
+        "reviewer": { "type": "string" },
+        "approvedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "maskIoU": { "type": "number", "minimum": 0, "maximum": 1 },
+        "highlightTrajectoryErrorPx": { "type": "number", "minimum": 0 },
+        "hueOrderAgreement": { "type": "number", "minimum": 0, "maximum": 1 },
+        "reviewScore": { "type": "number", "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "lane": { "const": "reference" } },
+        "required": ["lane"]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "properties": {
+              "confidence": {
+                "enum": [
+                  "reference-derived",
+                  "source-supported simulation",
+                  "visually fitted across real-card references"
+                ]
+              }
+            }
+          },
+          "provenance": {
+            "required": ["sourceType", "rights", "reviewStatus", "referenceBundleId"],
+            "properties": { "sourceType": { "const": "public-reference-synthesis" } }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "classification": {
+            "properties": {
+              "confidence": {
+                "enum": ["hypothesis", "photo-validated", "capture-validated", "production-validated"]
+              }
+            }
+          },
+          "provenance": {
+            "properties": {
+              "sourceType": {
+                "enum": ["controlled-capture", "video-sweep", "licensed-photo", "marketplace-reference", "synthetic"]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "asset": {
+      "type": "object",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
+        "colorSpace": { "enum": ["srgb", "linear", "normal"] },
+        "channel": { "type": "string" },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

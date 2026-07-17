@@ -1,0 +1,72 @@
+{
+  "task_id": "two-lane-p0-state-machine",
+  "objective": "Implement the two-lane promotion state machine (ADR-0002): Lane A reference ladder with three human-only gates, per-lane requirement thresholds, lane-aware publication and evidence-packet label enforcement, five new agent-ops schemas, and the constitution/doc updates — with Lane B behavior and historical ledger digests preserved byte-for-byte.",
+  "current_state": "Single linear 13-state physical ladder in promotion.py (schema 1.0.0, rank+1 promotion, hash-chained JSONL); review.py publication gate and check-evidence-packet.py lint are physical-lane only; no reference bundle schemas exist. Design fixed by docs/agent-ops/adr-0002-two-lane-reference-synthesis.md.",
+  "inputs": [
+    "docs/agent-ops/adr-0002-two-lane-reference-synthesis.md",
+    "docs/agent-ops/approval-state-machine.md",
+    "src/optcg_material/promotion.py"
+  ],
+  "allowed_paths": [
+    "src/optcg_material/promotion.py",
+    "src/optcg_material/promotion_cli.py",
+    "src/optcg_material/review.py",
+    "src/optcg_material/review_cli.py",
+    "scripts/agent-gates/check-evidence-packet.py",
+    "scripts/agent-gates/check-private-media.py",
+    "docs/agent-ops/reference-bundle.schema.json",
+    "docs/agent-ops/reference-source-quality.schema.json",
+    "docs/agent-ops/acquisition-task.schema.json",
+    "docs/agent-ops/appearance-envelope.schema.json",
+    "docs/agent-ops/reference-fitting-report.schema.json",
+    "docs/agent-ops/evidence-packet.schema.json",
+    "docs/agent-ops/approval-state-machine.md",
+    "docs/agent-ops/README.md",
+    "docs/agent-ops/concurrency-policy.md",
+    "docs/agent-ops/ownership.json",
+    "AGENTS.md",
+    "pyproject.toml",
+    "tests/test_promotion.py",
+    "tests/test_promotion_cli.py",
+    "tests/test_review.py",
+    "tests/test_agent_gates.py"
+  ],
+  "forbidden_paths": [
+    "src/optcg_material/models.py",
+    "src/optcg_material/session.py",
+    "src/optcg_material/geometry.py",
+    "src/optcg_material/segmentation/",
+    "src/lib/",
+    "public/",
+    "upstream/"
+  ],
+  "acceptance_criteria": [
+    "Entire pre-existing test suite passes unchanged; no existing test is edited to accommodate behavior changes (additive test edits only).",
+    "A recorded schema-1.0.0 physical ledger fixture replays with byte-identical event digests.",
+    "Lane A ladder enforces: entry at hypothesis only; exact-variant-verified, adversarial-review-passed, production-reference-derived are human-only with named technical_reviewer; rights_reviewer additionally required at production-reference-derived.",
+    "Lane A thresholds enforced: reference_bundle_id from exact-variant-verified; input_hashes from public-reference-supported; source_quality_tier (A, or B only with human review), evidence_packet, and resolved rights_status from reference-assets-proposed; metrics from reference-profile-fitted.",
+    "Lane is immutable per revision; cross-lane demotion impossible; validate_reference_family_proposal requires >=2 distinct card_ids and >=2 distinct bundle_ids at >= adversarial-review-passed.",
+    "A reference-lane profile or evidence packet containing 'capture-validated', 'physically measured', or 'physically exact' is rejected by the publication gate and flagged by the lint; allowed labels reference-derived / source-supported simulation / visually fitted across real-card references pass.",
+    "Five new schemas validate their synthetic fixtures; evidence-packet schema gains an optional lane field without breaking the existing prep packet.",
+    "AGENTS.md, approval-state-machine.md, README.md, concurrency-policy.md, ownership.json updated per ADR-0002."
+  ],
+  "required_tests": [
+    "uv run pytest tests/test_promotion.py tests/test_promotion_cli.py tests/test_review.py tests/test_agent_gates.py",
+    "uv run pytest",
+    "uv run ruff check src tests"
+  ],
+  "stop_conditions": [
+    "Any pre-existing test would need behavioral modification to pass.",
+    "Historical ledger digest replay breaks under the new event model.",
+    "The design requires editing files outside allowed_paths.",
+    "Lane B semantics would change in any observable way."
+  ],
+  "expected_outputs": [
+    "Two-lane promotion.py + CLI with tests",
+    "Lane-aware review.py publication gate + tests",
+    "Lane-scoped check-evidence-packet.py lint + tests",
+    "Five new agent-ops schemas with fixtures",
+    "Updated AGENTS.md, approval-state-machine.md, ownership.json, concurrency-policy.md, agent-ops README, pyproject.toml console scripts"
+  ],
+  "reviewer": "Eric Yun"
+}

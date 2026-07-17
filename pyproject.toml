@@ -1,0 +1,68 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "optcg-material-pipeline"
+version = "0.1.0"
+description = "Authenticated OPTCG physical-card capture ingestion, registration, material extraction, and render fitting tooling."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "GPL-3.0-only" }
+authors = [{ name = "GenkiStuff" }]
+dependencies = [
+  "blake3>=1.0.4,<2",
+  "jsonschema>=4.23,<5",
+  "numpy>=2.2,<3",
+  "opencv-python-headless>=4.11,<5",
+  "pillow>=11.2,<12",
+  "pydantic>=2.11,<3",
+  "rich>=14,<15",
+  "typer>=0.16,<1",
+]
+
+[project.scripts]
+optcg-material = "optcg_material.cli:app"
+optcg-semantic = "optcg_material.semantic_cli:app"
+optcg-maps = "optcg_material.material_cli:app"
+optcg-fit = "optcg_material.fitting_cli:app"
+optcg-review = "optcg_material.review_cli:app"
+optcg-promote = "optcg_material.promotion_cli:app"
+# Modules land in Phase 1 (ADR-0002); entry points resolving lazily is expected.
+optcg-reference = "optcg_material.reference_bundle_cli:main"
+optcg-reference-normalize = "optcg_material.reference_normalize_cli:main"
+optcg-appearance = "optcg_material.appearance_cli:main"
+optcg-reference-fit = "optcg_material.reference_fitting_cli:main"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.15,<2",
+  "pytest>=8.3,<9",
+  "pytest-cov>=6.1,<7",
+  "ruff>=0.12,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/optcg_material"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["optcg_material"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+
+[tool.coverage.run]
+source = ["optcg_material"]
+branch = true

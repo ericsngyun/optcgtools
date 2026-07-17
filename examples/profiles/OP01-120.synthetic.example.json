@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "1.0.0",
+  "card": {
+    "id": "OP01-120",
+    "name": "Synthetic manga-profile fixture",
+    "game": "one-piece-card-game",
+    "set": "OP01",
+    "rarity": "SEC / manga parallel",
+    "language": "JP",
+    "printVariant": "synthetic-example-only"
+  },
+  "classification": {
+    "family": "manga-prismatic-panel",
+    "confidence": "hypothesis",
+    "evidence": [
+      "This is a schema fixture and is not a production profile.",
+      "No official card artwork is bundled."
+    ]
+  },
+  "assets": {
+    "albedo": {
+      "uri": "/img/demo/optcg-placeholder.svg",
+      "colorSpace": "srgb"
+    },
+    "foilMask": {
+      "uri": "/img/masks/sp-generic-mask.svg",
+      "colorSpace": "linear",
+      "channel": "r"
+    },
+    "metallicMask": {
+      "uri": "/img/masks/sp-generic-mask.svg",
+      "colorSpace": "linear",
+      "channel": "r"
+    },
+    "glossMask": {
+      "uri": "/img/masks/sp-generic-mask.svg",
+      "colorSpace": "linear",
+      "channel": "r"
+    },
+    "textureMask": {
+      "uri": "/img/masks/sp-generic-mask.svg",
+      "colorSpace": "linear",
+      "channel": "r"
+    },
+    "cardBack": {
+      "uri": "/img/demo/card-back.svg",
+      "colorSpace": "srgb"
+    }
+  },
+  "renderer": {
+    "cssPreset": "manga-prismatic-panel",
+    "webglPreset": "manga-prismatic-panel-v1",
+    "qualityTier": "research",
+    "foilStrength": 0.72,
+    "metallicStrength": 0.3,
+    "glossStrength": 0.58,
+    "textureStrength": 0.22,
+    "roughness": 0.42,
+    "clearcoat": 0.86,
+    "clearcoatRoughness": 0.18,
+    "iridescence": 0.78,
+    "iridescenceIor": 1.3,
+    "iridescenceThicknessMinNm": 180,
+    "iridescenceThicknessMaxNm": 620,
+    "anisotropy": 0.15,
+    "anisotropyRotationRad": 0,
+    "maxTiltDeg": 11
+  },
+  "provenance": {
+    "sourceType": "synthetic",
+    "rights": "Repository-authored synthetic fixture; no official card artwork included.",
+    "sourceUrls": [],
+    "reviewStatus": "unreviewed"
+  }
+}

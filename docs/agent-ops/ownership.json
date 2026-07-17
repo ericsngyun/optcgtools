@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Machine-readable path ownership. One write-capable agent owns a group at a time.",
+  "groups": {
+    "capture-provenance": {
+      "owner": "capture-operator",
+      "paths": [
+        "src/optcg_material/models.py",
+        "src/optcg_material/provenance.py",
+        "src/optcg_material/quality.py",
+        "src/optcg_material/session.py",
+        "src/optcg_material/cli.py"
+      ]
+    },
+    "geometry-registration": {
+      "owner": "capture-operator",
+      "paths": ["src/optcg_material/geometry.py"]
+    },
+    "segmentation": {
+      "owner": "segmentation-specialist",
+      "paths": [
+        "src/optcg_material/semantic.py",
+        "src/optcg_material/semantic_cli.py",
+        "src/optcg_material/sam2_backend.py",
+        "src/optcg_material/segmentation/"
+      ]
+    },
+    "material-extraction": {
+      "owner": "material-forensics",
+      "paths": [
+        "src/optcg_material/material_maps.py",
+        "src/optcg_material/material_cli.py",
+        "src/optcg_material/appearance_envelope.py",
+        "src/optcg_material/appearance_cli.py"
+      ]
+    },
+    "fitting": {
+      "owner": "renderer-fitter",
+      "paths": [
+        "src/optcg_material/fitting.py",
+        "src/optcg_material/fitting_cli.py",
+        "src/optcg_material/candidate.py",
+        "src/optcg_material/reference_fitting.py",
+        "src/optcg_material/reference_fitting_cli.py"
+      ]
+    },
+    "reference-synthesis": {
+      "owner": "capture-operator",
+      "paths": [
+        "src/optcg_material/reference_bundle.py",
+        "src/optcg_material/reference_bundle_cli.py",
+        "src/optcg_material/reference_normalize.py",
+        "src/optcg_material/reference_normalize_cli.py"
+      ]
+    },
+    "research-renderer": {
+      "owner": "renderer-fitter",
+      "paths": [
+        "src/lib/research/",
+        "src/lib/components/ResearchRenderer.svelte",
+        "scripts/render-sequence.mjs",
+        "scripts/optimize-profile.mjs",
+        "scripts/lib/"
+      ]
+    },
+    "css-delivery": {
+      "owner": "renderer-fitter",
+      "paths": [
+        "src/lib/components/HoloCard.svelte",
+        "src/lib/components/CardProxy.svelte",
+        "public/css/cards/"
+      ]
+    },
+    "review-and-promotion": {
+      "owner": "lead",
+      "paths": [
+        "src/optcg_material/review.py",
+        "src/optcg_material/review_cli.py",
+        "src/optcg_material/promotion.py"
+      ]
+    },
+    "agent-governance": {
+      "owner": "lead",
+      "paths": [
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".claude/",
+        ".codex/",
+        "docs/agent-ops/",
+        "scripts/agent-gates/"
+      ]
+    }
+  }
+}

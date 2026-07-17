@@ -1,0 +1,24 @@
+# Private card media must never enter the public repository
+private-references/
+raw-captures/
+marketplace-references/
+
+node_modules/
+dist/
+.vite/
+.DS_Store
+*.local
+upstream/pokemon-cards-css/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/

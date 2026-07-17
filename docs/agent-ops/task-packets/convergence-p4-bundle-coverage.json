@@ -1,0 +1,52 @@
+{
+  "task_id": "convergence-p4-bundle-coverage",
+  "objective": "Add a bundle-level coverage score alongside (not replacing) per-source quality scoring: continuous temporal sequence, angle span, lighting consistency, macro coverage, independent source count, exact-variant confidence, interference diversity. A weak source must not pass because the bundle is diverse; a coherent multi-angle bundle must not be rejected solely because each frame is a single view.",
+  "current_state": "reference_bundle.py tiers bundles from per-source tiers only; three well-registered angles of one card scored 0.499 each (single-angle penalty) and the bundle stayed C although cross-source angle diversity was real. Provenance rule: sources whose review notes mark seller attribution UNKNOWN count as ONE independent-source family.",
+  "inputs": [
+    "src/optcg_material/reference_bundle.py",
+    "docs/agent-ops/reference-source-quality.schema.json"
+  ],
+  "allowed_paths": [
+    "src/optcg_material/reference_bundle.py",
+    "src/optcg_material/reference_bundle_cli.py",
+    "tests/test_reference_bundle.py",
+    "docs/operations/bundle-coverage-scoring.md"
+  ],
+  "forbidden_paths": [
+    "src/optcg_material/promotion.py",
+    "src/optcg_material/reference_fitting.py",
+    "src/optcg_material/reference_normalize.py",
+    "docs/agent-ops/*.schema.json",
+    "schemas/",
+    "src/lib/",
+    "AGENTS.md",
+    "pyproject.toml",
+    "scripts/"
+  ],
+  "assumptions": [
+    "The frozen reference-source-quality schema is not edited; the coverage record is a NEW JSON artifact under the bundle review/ directory with its own documented structure (schema formalization can follow later).",
+    "Independent source count must derive from seller/listing attribution AND explicit provenance-unknown flags in review notes, never from source_id count alone."
+  ],
+  "acceptance_criteria": [
+    "compute_bundle_coverage produces a documented coverage record (the seven axes, each 0-1, plus a composite and per-axis rationale strings) written by a new optcg-reference coverage CLI verb.",
+    "Bundle tier logic incorporates coverage WITHOUT weakening per-source gates: tier B eligibility may now be satisfied by (a) existing per-source route OR (b) >=3 accepted-registration sources spanning >=3 distinct angles with variant confidence >=0.9 AND coverage composite over a documented floor \u2014 while any source below per-source floors still contributes nothing individually.",
+    "Provenance-unknown families collapse to one independent source (unit test).",
+    "A weak-source-in-diverse-bundle test proves individual sources are not upgraded by coverage; a coherent-multi-angle test proves the 0.499 scenario now reaches reviewed-B eligibility (human review still required for B).",
+    "Existing tests pass unedited."
+  ],
+  "required_tests": [
+    "uv run pytest tests/test_reference_bundle.py",
+    "uv run pytest",
+    "uv run ruff check src tests"
+  ],
+  "stop_conditions": [
+    "The rule cannot be expressed without editing the frozen schema (report; do not edit it).",
+    "Any edit outside allowed_paths."
+  ],
+  "expected_outputs": [
+    "compute_bundle_coverage + coverage CLI verb + tier integration",
+    "docs/operations/bundle-coverage-scoring.md",
+    "Unit tests incl. provenance-collapse and no-weak-source-promotion"
+  ],
+  "reviewer": "Eric Yun"
+}

@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "synthetic-fit-001",
+  "session_id": "synthetic-card-en-001",
+  "profile_path": "profiles/synthetic-card-profile.json",
+  "output_path": "review/synthetic-fit-report.json",
+  "highlight_percentile": 96.0,
+  "allow_resize": false,
+  "weights": {
+    "linear_rgb": 1.0,
+    "gradient": 0.35,
+    "highlight_centroid": 0.65,
+    "hue": 0.45,
+    "temporal_delta": 0.4,
+    "exposure": 0.25
+  },
+  "frames": [
+    {
+      "frame_id": "tilt-x-minus-20",
+      "reference_path": "processed/registered/tilt-x-minus-20.png",
+      "candidate_path": "review/candidate/tilt-x-minus-20.png",
+      "angle_x_degrees": 0,
+      "angle_y_degrees": -20,
+      "light_azimuth_degrees": 32,
+      "light_elevation_degrees": 38,
+      "regions": [
+        {
+          "name": "foil-field",
+          "mask_path": "review/approved/foil-field-mask.png",
+          "weight": 2.0
+        },
+        {
+          "name": "metallic-ornament",
+          "mask_path": "review/approved/metallic-ornament-mask.png",
+          "weight": 2.5
+        },
+        {
+          "name": "black-ink",
+          "mask_path": "review/approved/black-ink-mask.png",
+          "weight": 1.5
+        }
+      ]
+    },
+    {
+      "frame_id": "tilt-x-zero",
+      "reference_path": "processed/registered/tilt-x-zero.png",
+      "candidate_path": "review/candidate/tilt-x-zero.png",
+      "angle_x_degrees": 0,
+      "angle_y_degrees": 0,
+      "light_azimuth_degrees": 32,
+      "light_elevation_degrees": 38,
+      "regions": [
+        {
+          "name": "foil-field",
+          "mask_path": "review/approved/foil-field-mask.png",
+          "weight": 2.0
+        },
+        {
+          "name": "metallic-ornament",
+          "mask_path": "review/approved/metallic-ornament-mask.png",
+          "weight": 2.5
+        },
+        {
+          "name": "black-ink",
+          "mask_path": "review/approved/black-ink-mask.png",
+          "weight": 1.5
+        }
+      ]
+    },
+    {
+      "frame_id": "tilt-x-plus-20",
+      "reference_path": "processed/registered/tilt-x-plus-20.png",
+      "candidate_path": "review/candidate/tilt-x-plus-20.png",
+      "angle_x_degrees": 0,
+      "angle_y_degrees": 20,
+      "light_azimuth_degrees": 32,
+      "light_elevation_degrees": 38,
+      "regions": [
+        {
+          "name": "foil-field",
+          "mask_path": "review/approved/foil-field-mask.png",
+          "weight": 2.0
+        },
+        {
+          "name": "metallic-ornament",
+          "mask_path": "review/approved/metallic-ornament-mask.png",
+          "weight": 2.5
+        },
+        {
+          "name": "black-ink",
+          "mask_path": "review/approved/black-ink-mask.png",
+          "weight": 1.5
+        }
+      ]
+    }
+  ],
+  "notes": "Paths are illustrative. Use registered authenticated frames, approved masks, and candidate frames exported from the same saved camera/light states."
+}

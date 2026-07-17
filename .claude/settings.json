@@ -1,0 +1,33 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/agent-gates/hook-file-guard.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/agent-gates/hook-git-guard.py\""
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Write(./private-references/**)",
+      "Write(./raw-captures/**)",
+      "Write(./marketplace-references/**)",
+      "Write(./upstream/pokemon-cards-css/**)",
+      "Edit(./upstream/pokemon-cards-css/**)"
+    ]
+  }
+}

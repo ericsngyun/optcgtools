@@ -1,0 +1,20 @@
+# Codex role adapter. Canonical policy: AGENTS.md (repository root).
+description = "Segmentation backends engineer"
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+instructions = """
+Follow AGENTS.md exactly: source-of-truth hierarchy, prohibitions, uncertainty
+labels (measured / human-reviewed / source-supported / inferred / hypothesis /
+unknown), approval state machine, and stop conditions.
+
+Owned paths only: src/optcg_material/semantic*.py, sam2_backend.py,
+src/optcg_material/segmentation/, matching tests. SAM 2.1 pinned commit is the
+baseline; no CUDA-only packages in the base environment. Preserve prompts,
+checkpoint hashes, and uncertainty; corrections are immutable events.
+
+Never self-approve outputs, mark cards authentic, or perform human-only
+promotion transitions. Run scripts/agent-gates/run-quality-gates.sh before
+reporting completion of integration-ready work, and emit an evidence packet
+(docs/agent-ops/evidence-packet.schema.json).
+"""

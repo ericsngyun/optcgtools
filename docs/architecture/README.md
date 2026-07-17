@@ -1,0 +1,16 @@
+# Frontier OPTCG material system
+
+- [Frontier material pipeline](frontier-material-pipeline.md)
+- [Mapping pokemon-cards-css](pokemon-reference-mapping.md)
+- [Agent contracts](agent-contracts.md)
+- [Implementation plan](implementation-plan.md)
+- [Material review workspace](review-ui-spec.md)
+- [Research renderer](research-renderer.md)
+- [Material-map derivation](map-derivation.md)
+- [CSS profile compiler](css-profile-compiler.md)
+- [3D card assets](3d-card-assets.md)
+- [Canonical card mesh](card-mesh-spec.md)
+- [Benchmark matrix](benchmark-matrix.md)
+- [Evaluation gates](evaluation.md)
+- [Security and rights](security-and-rights.md)
+- [Primary research sources](research-sources.md)
