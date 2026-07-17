@@ -1,0 +1,71 @@
+{
+  "task_id": "css-profile-compiler-mvp",
+  "objective": "Compile a card-material-profile JSON plus supplied mask assets into deterministic browser delivery assets (generated/cards/<profile-id>/: card.css, card-manifest.json, assets/) consumed by HoloCard.svelte, for grid and detail tiers plus static/reduced-motion fallbacks and a WebGL handoff manifest stub. The compiler NEVER creates or infers material maps and NEVER contains card-specific constants. Issue #9.",
+  "current_state": "No CSS profile compiler exists. schemas/card-material-profile.schema.json defines profiles (incl. lane + reference labels). HoloCard.svelte/CardProxy.svelte and public/css/cards/ carry the upstream pointer/spring/CSS-variable interaction boundary. Synthetic profile fixtures exist under examples/. Publication remains fail-closed for reference lane; internal-reference-prototype is a coded non-publishable state.",
+  "inputs": [
+    "schemas/card-material-profile.schema.json",
+    "src/lib/components/HoloCard.svelte",
+    "src/lib/components/CardProxy.svelte",
+    "public/css/cards/base.css",
+    "examples/profiles/OP01-120.synthetic.example.json",
+    "docs/agent-ops/adr-0002-two-lane-reference-synthesis.md"
+  ],
+  "allowed_paths": [
+    "scripts/compile-card-profile.mjs",
+    "scripts/lib/profile-compiler.mjs",
+    "scripts/lib/profile-compiler/",
+    "src/lib/components/HoloCard.svelte",
+    "src/lib/components/CardProxy.svelte",
+    "public/css/cards/base.css",
+    "tests-node/profile-compiler.test.mjs",
+    "tests-web/profile-compiler.spec.js",
+    "tests-web/profile-compiler-visual.spec.js",
+    "examples/profiles/",
+    "package.json",
+    ".gitignore",
+    "docs/operations/css-profile-compiler.md"
+  ],
+  "forbidden_paths": [
+    "src/optcg_material/",
+    "schemas/card-material-profile.schema.json",
+    "docs/agent-ops/",
+    "AGENTS.md",
+    "scripts/agent-gates/",
+    "upstream/",
+    "public/img/"
+  ],
+  "assumptions": [
+    "Node-side compiler following the existing scripts/*.mjs + tests-node + tests-web wrapper conventions; wire a `compile:profile` npm script and, if a node test runner script is needed, `test:node` (package.json edits limited to scripts entries).",
+    "generated/ output is git-ignored; tests write to temp dirs; no generated artifact is ever committed (the generated-artifacts gate stays authoritative).",
+    "Synthetic fixtures only for this PR; output is never described as an accurate One Piece card."
+  ],
+  "acceptance_criteria": [
+    "Deterministic: identical profile + asset hashes produce byte-identical card.css, card-manifest.json, and asset copies; manifest binds profile hash + per-asset hashes.",
+    "Six material layers routed independently (albedo, diffractive foil, metallic, texture/etching, clearcoat glare, ink suppression) into the documented CSS variable set (--foil-strength, --foil-band-angle, --foil-band-width, --foil-hue-offset, --metallic-strength, --metallic-warmth, --gloss-strength, --gloss-size, --texture-strength, --texture-scale, --texture-direction, --ink-suppression); no single generic rainbow overlay.",
+    "Pokemon-derived interaction boundary preserved: normalized pointer state, spring smoothing, CSS custom properties, stable card-layer markup, separate shine/glare layers, profile/proxy resolution; no Pokemon rarity assumptions or textures copied.",
+    "Tiers: grid output (CSS-only simplified effective masks, offscreen suspension, reduced-motion + static fallbacks) and detail output (independent multi-channel, restrained tilt); hero = WebGL handoff manifest JSON only when the profile declares channels CSS cannot reproduce (no GLB, no WebGL implementation).",
+    "State gating: compiles synthetic-fixture, internal-reference-prototype (output clearly marked private/non-publishable in manifest + CSS comment header), and approved production profiles; production compilation fails closed unless the full publication gate passes (invoke/require the existing gate result, do not reimplement it); any other state refuses.",
+    "Tests cover: determinism, hash binding, missing-channel static degradation, independent mask routing, internal-prototype non-public marker, production publication rejection, reduced-motion output, invalid/private asset URI rejection (private-media paths refused), and a source scan proving no card-specific constants in compiler source.",
+    "Visual regression: Playwright spec renders compiled synthetic output in HoloCard at poses neutral/left/right/top/bottom tilt/glare center/glare edge and compares against the research renderer at the same poses with a documented tolerance, recording that CSS is an approximation (docs/operations/css-profile-compiler.md)."
+  ],
+  "required_tests": [
+    "node --test tests-node/profile-compiler.test.mjs (or the wired npm script)",
+    "npx playwright test tests-web/profile-compiler.spec.js tests-web/profile-compiler-visual.spec.js",
+    "scripts/agent-gates/run-quality-gates.sh"
+  ],
+  "required_visual_checks": [
+    "Pose grid contact sheet: compiled CSS vs research renderer at the seven canonical poses on a synthetic fixture"
+  ],
+  "stop_conditions": [
+    "Any requirement would need editing the profile schema, python pipeline, or agent gates (report, do not edit).",
+    "The publication gate cannot be consumed without reimplementing it (report the exact seam).",
+    "Any card-specific constant would be needed in compiler source."
+  ],
+  "expected_outputs": [
+    "compile-card-profile CLI + profile-compiler library",
+    "HoloCard/CardProxy wiring for compiled variables (minimal, boundary-preserving)",
+    "Synthetic fixture profiles + node/Playwright tests + visual comparison harness",
+    "docs/operations/css-profile-compiler.md (contract, tiers, CSS fidelity limits)"
+  ],
+  "reviewer": "Eric Yun"
+}
