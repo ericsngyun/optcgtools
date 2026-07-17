@@ -444,6 +444,12 @@ export function validatePrototypeReport(report, profileSha256, profile) {
   if (!Number.isInteger(report.revision) || report.revision < 1) {
     errors.push("prototype attestation revision must be an integer >= 1");
   }
+  const LEDGER_SLUG = /^[a-z0-9][a-z0-9._-]{1,95}$/;
+  for (const field of ["profile_id", "reference_bundle_id"]) {
+    if (isNonEmptyString(report[field]) && !LEDGER_SLUG.test(report[field])) {
+      errors.push(`prototype attestation ${field} is not a valid ledger slug`);
+    }
+  }
   const bundleId = profile?.provenance?.referenceBundleId;
   if (!isNonEmptyString(report.reference_bundle_id) || report.reference_bundle_id !== bundleId) {
     errors.push(
@@ -476,7 +482,7 @@ export function validatePrototypeReport(report, profileSha256, profile) {
   if (report.metrics_present !== true) {
     errors.push("prototype attestation metrics_present must be boolean true");
   }
-  if (!isNonEmptyString(report.rights_status) || report.rights_status === "unknown") {
+  if (!isNonEmptyString(report.rights_status) || String(report.rights_status).toLowerCase() === "unknown") {
     errors.push("prototype attestation rights_status must be resolved (never 'unknown')");
   }
   if (!isNonEmptyString(report.technical_reviewer)) {

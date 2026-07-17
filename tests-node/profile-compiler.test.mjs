@@ -20,6 +20,7 @@ import {
   sha256Hex,
   tierPlan,
   validateAssetUri,
+  validatePrototypeReport,
   validatePublicationReport,
   webglHandoffFor
 } from "../scripts/lib/profile-compiler.mjs";
@@ -861,4 +862,24 @@ test("end-to-end: a real optcg-promote ledger attestation compiles a reference p
     reportSha256: sha256Hex(reportRaw),
     passed: true
   });
+});
+
+test("prototype attestation with physical lane or non-slug ids is refused", () => {
+  const profileBytes = Buffer.from(JSON.stringify({ any: "profile" }));
+  const digest = createHash("sha256").update(profileBytes).digest("hex");
+  const profile = {
+    card: { id: LEDGER_PROFILE_ID },
+    provenance: { referenceBundleId: REFERENCE_BUNDLE_ID },
+  };
+  const r1 = validatePrototypeReport(prototypeReport(digest, { lane: "physical" }), digest, profile);
+  assert.equal(r1.ok, false);
+  const badSlugProfile = {
+    card: { id: "Bad Slug!" },
+    provenance: { referenceBundleId: REFERENCE_BUNDLE_ID },
+  };
+  const r2 = validatePrototypeReport(prototypeReport(digest, { profile_id: "Bad Slug!" }), digest, badSlugProfile);
+  assert.equal(r2.ok, false);
+  assert.ok(r2.errors.some((e) => e.includes("ledger slug")));
+  const r3 = validatePrototypeReport(prototypeReport(digest, { rights_status: "UNKNOWN" }), digest, profile);
+  assert.equal(r3.ok, false);
 });
